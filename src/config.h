@@ -35,7 +35,8 @@
 // one configuration file by placing their specific defaults and pin map at the bottom of this file.
 // If doing so, simply comment out these two defines and see instructions below.
 #define DEFAULTS_GENERIC
-#define CPU_MAP_ATMEGA328P // Arduino Uno CPU
+//#define CPU_MAP_ATMEGA328P // Arduino Uno CPU
+#define CPU_MAP_PLASMA_NANO328
 
 // Serial baud rate
 // #define BAUD_RATE 230400
@@ -676,6 +677,8 @@
 // on pins D9/D10 (as [X1,Z]/[X2,Y] or [X,Y2]/[Y1,Z]), home each axis independently, and 
 // updating lots of code to ensure everything is running correctly.
 // #define DUAL_AXIS_CONFIG_CNC_SHIELD_CLONE  // Uncomment to select. Comment other configs.
+
+
 
 
 /* ---------------------------------------------------------------------------------------
