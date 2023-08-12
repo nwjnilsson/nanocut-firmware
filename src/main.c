@@ -106,18 +106,18 @@ ISR(TIMER2_OVF_vect){
       //Dir
       if (settings.dir_invert_mask & (1 << 2)) //Z dir is inverted
       {
-        PORTD |= (1 << PD7);    // set pin A2 high
+        PORTD |= (1 << PD7);
         _delay_us(10);
       }
       else
       { 
-        PORTD &= ~(1 << PD7);    // set pin 7 low
+        PORTD &= ~(1 << PD7);
         _delay_us(10);
       }
       //Step
-      PORTD |= (1 << PD4);     // set pin A2 high
+      PORTD |= (1 << PD4);     // set pin D4 high
       _delay_us(10);
-      PORTD &= ~(1 << PD4);    // set pin A2 low
+      PORTD &= ~(1 << PD4);    // set pin D4 low
       sys_position[Z_AXIS]++;
     }
     else if (jog_z_down)
@@ -125,18 +125,18 @@ ISR(TIMER2_OVF_vect){
       if (settings.dir_invert_mask & (1 << 2)) //Z dir is inverted
       {
         //Dir
-        PORTD &= ~(1 << PD7);    // set pin 7 low
+        PORTD &= ~(1 << PD7);
         _delay_us(10);
       }
       else
       {
-        PORTD |= (1 << PD7);     // set pin A2 high
+        PORTD |= (1 << PD7);
         _delay_us(10);
       }
       //Step
-      PORTD |= (1 << PD4);     // set pin A2 high
+      PORTD |= (1 << PD4);
       _delay_us(10);
-      PORTD &= ~(1 << PD4);    // set pin A2 low
+      PORTD &= ~(1 << PD4);
       sys_position[Z_AXIS]--;
     }
     z_step_timer = micros;
