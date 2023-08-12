@@ -183,7 +183,7 @@
       // NOTE: Spindle enable moved from D12 to A3 (old coolant flood enable pin). Spindle direction pin is removed.
       #define SPINDLE_ENABLE_DDR    DDRB
       #define SPINDLE_ENABLE_PORT   PORTB
-      #ifdef VARIABLLE_SPINDLE
+      #ifdef VARIABLE_SPINDLE
         // NOTE: USE_SPINDLE_DIR_AS_ENABLE_PIN not supported with dual axis feature.
         #define SPINDLE_ENABLE_BIT    3  // Uno Digital Pin 11
       #else
