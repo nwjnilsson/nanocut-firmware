@@ -1,0 +1,115 @@
+function OnAbout(event)
+   ctrl = event:GetTextCtrl()
+   ctrl:AppendText("Xmotion Gen3 plasma post processor\n")
+   ctrl:AppendText("\n")
+   ctrl:AppendText("Non-Modal G-codes and coordinates\n")
+   ctrl:AppendText("Comments enclosed with ( and )\n")
+   ctrl:AppendText("Incremental IJ\n")
+end
+-- revision 11/23/20 
+-- Added drill option for piercing centers for holes to later be drill by hand or drill press...
+
+
+--  revision 7/8/2019
+--  Changed for Xmotion Gen3 Control
+
+--  revision 3/2/07
+--  Removed final safety move. This is now done in SheetCam
+
+--   revision 7/10/04
+--   Added new arc handling
+
+--   Created 30/3/2005
+--   based on Mach2.post
+
+
+
+function OnInit()
+   bigArcs = 1 --stitch arc segments together
+   minArcSize = 0.05 --arcs smaller than this are converted to moves
+end
+
+function OnNewLine()
+
+end
+
+function OnFinish()
+   post.Text ("M30\n")
+end
+
+function OnRapid()
+   if((endX * scale) < 1000) then
+      post.Text ("G0 X")
+      post.Number (endX * scale, "0.###")
+      post.Text (" Y")
+      post.Number (endY * scale, "0.###")
+      post.Eol()
+   else
+
+   end  
+end
+
+function OnMove()
+
+   if((endX * scale) < 1000) then
+      post.Text ("G1X")
+      post.Number (endX * scale, "0.###")
+      post.Text ("Y")
+      post.Number (endY * scale, "0.###")
+      post.Text ("F")
+      post.Number (feedRate * scale, "0.###")
+      post.Eol()
+   else
+
+   end
+end
+
+function OnArc()
+   post.ArcAsMoves(0.02)
+end
+
+function OnPenDown()
+   post.Text ("fire_torch ")
+   post.Number (pierceHeight * scale, "0.###")
+   post.Text (" ")
+   post.Number (pierceDelay, "0.###")
+   post.Text (" ")
+   post.Number (cutHeight * scale, "0.###")
+   post.Eol();
+end
+
+function OnPenUp()
+   post.Text ("torch_off")
+   post.Eol();
+end
+
+function OnNewOperation()
+   
+end
+
+function OnComment()
+ 
+end
+
+
+function OnNewPart()
+   
+end
+
+
+function OnDrill()
+   post.Text ("G0 X")
+   post.Number (endX * scale, "0.###")
+   post.Text (" Y")
+   post.Number (endY * scale, "0.###")
+   post.Eol()
+   post.Text ("fire_torch ")
+   post.Number (pierceHeight * scale, "0.###")
+   post.Text (" ")
+   post.Number (pierceDelay, "0.###")
+   post.Text (" ")
+   post.Number (cutHeight * scale, "0.###")
+   post.Eol();
+   post.Text ("torch_off")
+   post.Eol();
+end
