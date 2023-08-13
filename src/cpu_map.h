@@ -249,11 +249,12 @@
 
 #endif
 
-/* @addition: Custom config for use with Arduino Nano for plasma cutting */
-#ifdef CPU_MAP_PLASMA_NANO328 // (Arduino Nano Atmega328p)
+
+#ifdef CPU_MAP_PLASMA_NANO
   #ifdef VARIABLE_SPINDLE
     #error "Variable spindle should be disabled for the plasma config"
   #endif
+  
   // Define serial port pins and interrupt vectors.
   #define SERIAL_RX     USART_RX_vect
   #define SERIAL_UDRE   USART_UDRE_vect
@@ -311,7 +312,6 @@
   #define CONTROL_MASK      ((1<<CONTROL_RESET_BIT)|(1<<CONTROL_FEED_HOLD_BIT)|(1<<CONTROL_CYCLE_START_BIT)|(1<<CONTROL_SAFETY_DOOR_BIT))
   #define CONTROL_INVERT_MASK   CONTROL_MASK // May be re-defined to only invert certain control pins.
 
-
   // Define probe switch input pin.
   #define PROBE_DDR       DDRC
   #define PROBE_PIN       PINC
@@ -320,30 +320,13 @@
   #define PROBE_MASK      (1<<PROBE_BIT)
 
   #if !defined(ENABLE_DUAL_AXIS)
-
-    // Define flood and mist coolant enable output pins.
-    #define COOLANT_FLOOD_DDR   DDRC
-    #define COOLANT_FLOOD_PORT  PORTC
-    #define COOLANT_FLOOD_BIT   3  // Nano Analog Pin 3
-    #define COOLANT_MIST_DDR   DDRC
-    #define COOLANT_MIST_PORT  PORTC
-    #define COOLANT_MIST_BIT   4  // Nano Analog Pin 4
-
-    // Define spindle enable and spindle direction output pins.
-    #define SPINDLE_ENABLE_DDR    DDRB
-    #define SPINDLE_ENABLE_PORT   PORTB
-    // Z Limit pin and spindle PWM/enable pin swapped to access hardware PWM on Pin 11.
-    
-    #define SPINDLE_ENABLE_BIT    4  // Nano Digital Pin 12
-    
-  
+    #error "Pinout not specified for single-axis operation"
   #else
 
     // Dual axis feature requires an independent step pulse pin to operate. The independent direction pin is not 
     // absolutely necessary but facilitates easy direction inverting with a Grbl $$ setting. These pins replace 
     // the spindle direction and optional coolant mist pins.
-    
-    // Note: I'm not actually using this shield with the Nano
+
     #ifdef DUAL_AXIS_CONFIG_PROTONEER_V3_51
       // NOTE: Step pulse and direction pins may be on any port and output pin.
       #define STEP_DDR_DUAL       DDRC
@@ -355,23 +338,23 @@
       #define DUAL_DIRECTION_BIT  3  // Nano Analog Pin 3
       #define DIRECTION_MASK_DUAL ((1<<DUAL_DIRECTION_BIT))
 
-      // NOTE: Dual axis limit is shared with the z-axis limit pin by default. Pin used must be on the same port
-      // as other limit pins.
-      #define DUAL_LIMIT_BIT    4 // Nano D12
+      
+      #define DUAL_LIMIT_BIT    4    // Nano Digital Pin 12
       #define LIMIT_MASK        ((1<<X_LIMIT_BIT)|(1<<Y_LIMIT_BIT)|(1<<Z_LIMIT_BIT)|(1<<DUAL_LIMIT_BIT))
 
-
       // Define coolant enable output pins.
-      // NOTE: Coolant flood moved from A3 to A4. Coolant mist not supported with dual axis feature on Arduino Nano.
-      #define COOLANT_FLOOD_DDR   DDRB
-      #define COOLANT_FLOOD_PORT  PORTB
-      #define COOLANT_FLOOD_BIT   5  // Nano Digital Pin 13
+      // Coolant mist not supported with dual axis feature on Arduino Nano.
+      #define COOLANT_FLOOD_DDR   DDRC
+      #define COOLANT_FLOOD_PORT  PORTC
+      #define COOLANT_FLOOD_BIT   6  // Nano Analog pin 6
 
       // Define spindle enable output pin.
-      #define SPINDLE_ENABLE_DDR    DDRC
-      #define SPINDLE_ENABLE_PORT   PORTC
-      #define SPINDLE_ENABLE_BIT    6  // Nano Analog pin 6
+      #define SPINDLE_ENABLE_DDR    DDRB
+      #define SPINDLE_ENABLE_PORT   PORTB
       
+      #define SPINDLE_ENABLE_BIT    5  // Nano Digital Pin 13
+      
+
     #endif
 
   #endif
