@@ -26,6 +26,6 @@ My specific pinout config can be found below. I'm running a dual-Y stepper setup
 | A2 | Cycle start |
 | A3 | Y2 dir |
 | A4 | Y2 step |
-| A5 | Probe (not used) |
+| A5 | Probe (touch torch) |
 | A6 | Coolant flood (not used) |
 | A7 | Unused |
