@@ -5,7 +5,10 @@ This repository was originally forked from [UnfinishedBusiness/XmotionFirmware](
 The config files in this repository are made for using an Arduino Nano (although the configs can easily be changed). I used the [Minicore](https://github.com/MCUdude/MiniCore) bootloader since the whole application wouldn't fit in the flash memory with the standard bootloader. Flashing the bootloader can be done by using the Arduino IDE and a spare Arduino as a programmer. The application itself was built and uploaded to the board using [PlatformIO](https://platformio.org/).
 
 # Pinout
-My specific pinout config can be found below. I'm running a dual-Y stepper setup, so I will refer to the two as Y1 and Y2. 
+My specific pinout config (`CPU_MAP_PLASMA_NANO` in `cpu_map.h`) can be found below. I'm running a dual-Y stepper setup, so I will refer to the two as Y1 and Y2. 
+
+*IMPORTANT*
+Make sure to go through `config.h` and understand the implications of `DISABLE_LIMIT_PIN_PULL_UP` and `DISABLE_PROBE_PIN_PULL_UP` etc. as these settings will vary depending on what sensors/switches are being used. The NanoCut Control software supports configuring limit pin inversion (i.e the meaning of high/low), but not changing the pull-up configuration. 
 
 | Pin | Function |
 |----|----|
