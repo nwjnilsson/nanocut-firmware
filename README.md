@@ -19,8 +19,8 @@ My specific pinout config can be found below. I'm running a dual-Y stepper setup
 | D9 | X limit |
 | D10 | Y1 limit |
 | D11 | Z limit |
-| D12 | Y2 limit |
-| D13 | Spindle/Torch enable |
+| D12 | Spindle/Torch enable |
+| D13 | Y2 limit |
 | A0 | Arc voltage (0-5V) |
 | A1 | Arc OK |
 | A2 | Cycle start |
