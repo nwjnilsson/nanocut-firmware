@@ -417,16 +417,6 @@
 // time step. Also, keep in mind that the Arduino delay timer is not very accurate for long delays.
 #define DWELL_TIME_STEP 50 // Integer (1-255) (milliseconds)
 
-// Creates a delay between the direction pin setting and corresponding step pulse by creating
-// another interrupt (Timer2 compare) to manage it. The main Grbl interrupt (Timer1 compare)
-// sets the direction pins, and does not immediately set the stepper pins, as it would in
-// normal operation. The Timer2 compare fires next to set the stepper pins after the step
-// pulse delay time, and Timer2 overflow will complete the step pulse, except now delayed
-// by the step pulse time plus the step pulse delay. (Thanks langwadt for the idea!)
-// NOTE: Uncomment to enable. The recommended delay must be > 3us, and, when added with the
-// user-supplied step pulse time, the total time must not exceed 127us. Reported successful
-// values for certain setups have ranged from 5 to 20us.
-// #define STEP_PULSE_DELAY 10 // Step pulse delay in microseconds. Default disabled.
 
 // The number of linear motions in the planner buffer to be planned at any give time. The vast
 // majority of RAM that Grbl uses is based on this buffer size. Only increase if there is extra

@@ -497,20 +497,7 @@ ISR(TIMER0_OVF_vect)
   #endif
   TCCR0B = 0; // Disable Timer0 to prevent re-entering this interrupt when it's not needed.
 }
-#ifdef STEP_PULSE_DELAY
-  // This interrupt is used only when STEP_PULSE_DELAY is enabled. Here, the step pulse is
-  // initiated after the STEP_PULSE_DELAY time period has elapsed. The ISR TIMER2_OVF interrupt
-  // will then trigger after the appropriate settings.pulse_microseconds, as in normal operation.
-  // The new timing between direction, step pulse, and step complete events are setup in the
-  // st_wake_up() routine.
-  ISR(TIMER0_COMPA_vect)
-  {
-    STEP_PORT = st.step_bits; // Begin step pulse.
-    #ifdef ENABLE_DUAL_AXIS
-      STEP_PORT_DUAL = st.step_bits_dual;
-    #endif
-  }
-#endif
+
 
 
 // Generates the step and direction port invert masks used in the Stepper Interrupt Driver.
