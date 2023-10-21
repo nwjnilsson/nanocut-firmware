@@ -60,13 +60,12 @@
 #include "spindle_control.h"
 #include "stepper.h"
 #include "jog.h"
+#include "thc.h"
 
 // ---------------------------------------------------------------------------------------
 // COMPILE-TIME ERROR CHECKING OF DEFINE VALUES:
-extern volatile bool jog_z_up;
-extern volatile bool jog_z_down;
+extern volatile int jog_z_action;
 extern volatile bool machine_in_motion;
-extern volatile unsigned long micros;
 extern volatile unsigned long millis;
 extern volatile uint16_t analogVal;
 extern volatile uint16_t analogSetVal;

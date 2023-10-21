@@ -140,8 +140,7 @@ uint8_t serial_read()
   }
 }
 
-volatile bool jog_z_up;
-volatile bool jog_z_down;
+volatile int jog_z_action;
 
 ISR(SERIAL_RX)
 {
@@ -155,11 +154,10 @@ ISR(SERIAL_RX)
     case CMD_STATUS_REPORT: system_set_exec_state_flag(EXEC_STATUS_REPORT); break; // Set as true
     case CMD_CYCLE_START:   system_set_exec_state_flag(EXEC_CYCLE_START); break; // Set as true
     case CMD_FEED_HOLD:     system_set_exec_state_flag(EXEC_FEED_HOLD); break; // Set as true
-    case CMD_Z_RUN_NEGATIVE: jog_z_down = true; break;
-    case CMD_Z_RUN_POSITIVE: jog_z_up = true; break;
+    case CMD_Z_RUN_NEGATIVE: jog_z_action = DOWN; break;
+    case CMD_Z_RUN_POSITIVE: jog_z_action = UP; break;
     case CMD_Z_RUN_CANCEL: {
-      jog_z_down = false; 
-      jog_z_up = false; 
+      jog_z_action = STAY;
       break;
     };
     default :
