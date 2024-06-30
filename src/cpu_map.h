@@ -339,7 +339,7 @@
       #define DIRECTION_MASK_DUAL ((1<<DUAL_DIRECTION_BIT))
 
       
-      #define DUAL_LIMIT_BIT    5    // Nano Digital Pin 13
+      #define DUAL_LIMIT_BIT    4    // Nano Digital Pin 12
       #define LIMIT_MASK        ((1<<X_LIMIT_BIT)|(1<<Y_LIMIT_BIT)|(1<<Z_LIMIT_BIT)|(1<<DUAL_LIMIT_BIT))
 
       // Define coolant enable output pins.
@@ -349,10 +349,10 @@
       #define COOLANT_FLOOD_BIT   6  // Nano Analog pin 6
 
       // Define spindle enable output pin.
-      #define SPINDLE_ENABLE_DDR    DDRB
-      #define SPINDLE_ENABLE_PORT   PORTB
+      #define SPINDLE_ENABLE_DDR    DDRC
+      #define SPINDLE_ENABLE_PORT   PORTC
       
-      #define SPINDLE_ENABLE_BIT    4  // Nano Digital Pin 12
+      #define SPINDLE_ENABLE_BIT    7  // Nano Analog Pin 7
       
 
     #endif

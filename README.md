@@ -12,7 +12,7 @@ My specific pinout config (`CPU_MAP_PLASMA_NANO` in `cpu_map.h`) can be found be
 **IMPORTANT**\
 Make sure to go through `config.h` and understand the implications of `DISABLE_LIMIT_PIN_PULL_UP` and `DISABLE_PROBE_PIN_PULL_UP` etc. as these settings will vary depending on what sensors/switches are being used. The NanoCut Control software supports configuring limit pin inversion (i.e the meaning of high/low), but not changing the pull-up configuration. 
 
-**TODO**: Double check pinout. I think I put torch enable on D12 because D13 flickers on startup due to the bootloader doing things with the LED.
+**Note** D13 is unused because I encountered issues when trying to use it as the Y2 limit. Unsure if pin is used by something else and there is a conflict.
 | Pin | Function |
 |----|----|
 | D2 | X step |
@@ -25,8 +25,8 @@ Make sure to go through `config.h` and understand the implications of `DISABLE_L
 | D9 | X limit |
 | D10 | Y1 limit |
 | D11 | Z limit |
-| D12 | Spindle/Torch enable |
-| D13 | Y2 limit |
+| D12 | Y2 limit |
+| D13 | Unused |
 | A0 | Arc voltage (0-5V) |
 | A1 | Arc OK |
 | A2 | Cycle start |
@@ -34,4 +34,4 @@ Make sure to go through `config.h` and understand the implications of `DISABLE_L
 | A4 | Y2 step |
 | A5 | Probe (touch torch) |
 | A6 | Coolant flood (not used) |
-| A7 | Unused |
+| A7 | Torch enable |
