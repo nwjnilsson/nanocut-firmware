@@ -1,14 +1,15 @@
 #include "grbl.h"
 
-unsigned long thc_step_delay;
-unsigned long arc_stablization_timer;
+volatile unsigned long arc_stablization_timer;
+volatile int32_t z_axis_steps_limit;
 volatile unsigned long millis;
 volatile uint16_t thc_ctrl_counter;
 volatile uint16_t thc_pulse_counter;
 volatile uint16_t thc_pulse_period;
 volatile uint8_t z_dir_invert;
 
-#define THC_UPDATE_PERIOD_MICROS 5000
+#define THC_UPDATE_PERIOD_US 5000
+#define THC_UPDATE_PERIOD_MS 5
 #define TIM2_LOAD_VAL 206
 
 
@@ -52,18 +53,21 @@ void thc_update()
 }
 
 
+// Runs every time settings are written to the Z-axis as well as on startup
 void thc_init()
 {
     arc_stablization_timer = 0;
     millis = 0;
     // Calculate pulse period from feedrate
     thc_pulse_period = ceil((1e6 * 60.f) / (settings.max_rate[Z_AXIS] * settings.steps_per_mm[Z_AXIS]));
+    z_axis_steps_limit = (int32_t)settings.max_travel[Z_AXIS]*settings.steps_per_mm[Z_AXIS];
     thc_pulse_counter = 0;
     thc_ctrl_counter = 0;
+    z_dir_invert = (settings.dir_invert_mask & (1 << Z_AXIS));
 
     //Setup Timer2
     TCCR2B = 0x00;          //Disable Timer2 while we set it up
-    TCNT2  = TIM2_LOAD_VAL; //Reset Timer Count to 0 out of 255
+    TCNT2  = TIM2_LOAD_VAL; //Reset Timer Count
     TIFR2  = 0x00;          //Timer2 INT Flag Reg: Clear Timer Overflow Flag
     TIMSK2 = 0x01;          //Timer2 INT Reg: Timer2 Overflow Interrupt Enable
     TCCR2A = 0x00;          //Timer2 Control Reg A: Wave Gen Mode normal
@@ -73,17 +77,14 @@ void thc_init()
 // Flips the step bit and updates the machine position
 void thc_step()
 {
-    int32_t current_steps[N_AXIS]; // Copy current state of the system position variable
-    memcpy(current_steps, sys_position, sizeof(sys_position));
-    float current_position[N_AXIS];
-    system_convert_array_steps_to_mpos(current_position, current_steps);
-
-    if ( (jog_z_action == UP && (current_position[Z_AXIS] < 0.f - __FLT_EPSILON__)) ||
-         (jog_z_action == DOWN && (current_position[Z_AXIS] > settings.max_travel[Z_AXIS])) )
+    int32_t current_steps = sys_position[Z_AXIS];
+    // This assumes that the z-axis range is [-D, 0]
+    if ( (jog_z_action == UP && (current_steps < 0)) ||
+         (jog_z_action == DOWN && (current_steps > z_axis_steps_limit)) )
     {
-        //Step
+        // Step
         PORTD |= (1 << PD4);
-        delay_us(THC_PULSE_TIME);
+        delay_us(THC_PULSE_TIME_US);
         PORTD &= ~(1 << PD4);
         sys_position[Z_AXIS] += jog_z_action;
     }
@@ -94,7 +95,12 @@ void thc_step()
 * are already in use. Therefore, overflow interrupts are used to generate the THC stepping pulses.
 * The processor frequency is 16 MHz, the prescaler is set to 32, and an interrupt is generated every 40
 * ticks. This gives an interrupt frequency of ~10 KHz. This was not tested extensively but the machine seems
-* to move approximately the correct distance for the given time. 
+* to move approximately the correct distance for the given time.
+*
+* This stuff is pretty hacky to get around GRBL control of the Z axis. If the Z axis is moved
+* here while GRBL is doing a touch-off for example, it will cause problems. The idea is that the
+* THC should only be able to move the torch when there is an arc OK signal or when PGDOWN/PGUP is
+* pressed in the control software.
 */
 ISR(TIMER2_OVF_vect) 
 {
@@ -102,19 +108,20 @@ ISR(TIMER2_OVF_vect)
     thc_ctrl_counter += 100;
     thc_pulse_counter += 100;
 
-    if( thc_ctrl_counter >= THC_UPDATE_PERIOD_MICROS )
+    if( thc_ctrl_counter >= THC_UPDATE_PERIOD_US )
     {
-        millis += THC_UPDATE_PERIOD_MICROS / 1000;
-        thc_ctrl_counter = thc_ctrl_counter - THC_UPDATE_PERIOD_MICROS;
-        if (machine_in_motion == true) thc_update(); //Once a millisecond, evaluate what the THC should be doing
-        // Calculate pulse period again in case it has changed (this should be done upon a write event but whatever)
-        thc_pulse_period = ceil((1e6 * 60.f) / (settings.max_rate[Z_AXIS] * settings.steps_per_mm[Z_AXIS]));
-        z_dir_invert = (settings.dir_invert_mask & (1 << Z_AXIS));
+        millis += THC_UPDATE_PERIOD_MS;
+        thc_ctrl_counter = thc_ctrl_counter - THC_UPDATE_PERIOD_US;
+        if (machine_in_motion == true) thc_update(); // Evaluate what the THC should be doing
     }
     
-    // Raise step pulse
-    if(thc_pulse_counter >= thc_pulse_period)
+    if (jog_z_action == STAY) {
+        // We are not generating pulses
+        thc_pulse_counter = 0;
+    }
+    else if(thc_pulse_counter >= thc_pulse_period)
     {
+        // Generate pulse
         // Set to the overflow to try to compensate for inaccuracies
         thc_pulse_counter = thc_pulse_counter - thc_pulse_period;
         // Set direction

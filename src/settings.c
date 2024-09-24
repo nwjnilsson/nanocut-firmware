@@ -216,6 +216,9 @@ uint8_t settings_store_global_setting(uint8_t parameter, float value) {
           case 2: settings.acceleration[parameter] = value*60*60; break; // Convert to mm/min^2 for grbl internal use.
           case 3: settings.max_travel[parameter] = -value; break;  // Store as negative for grbl internal use.
         }
+        // Re-init THC if new parameters have been written to the Z-axis
+        if (parameter == Z_AXIS)
+          thc_init();
         break; // Exit while-loop after setting has been configured and proceed to the EEPROM write call.
       } else {
         set_idx++;
