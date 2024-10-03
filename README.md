@@ -31,7 +31,8 @@ To keep the code simple, certain assumptions about the hardware are made.
 parameters. You need to take this into consideration when tuning your speeds and
 selecting the stepper for your Z axis.~~
 - Acceleration support has been added but not extensively tested. Make sure to set
-reasonable values...
+reasonable values... To fit the code on the Nano I removed code related to coolant
+control from grbl. I don't see it being used for plasma cutters anyway.
 
 
 ## Getting GRBL to run on the Arduino Nano
