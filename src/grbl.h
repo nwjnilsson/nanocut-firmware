@@ -46,7 +46,6 @@
 #include "defaults.h"
 #include "cpu_map.h"
 #include "planner.h"
-#include "coolant_control.h"
 #include "eeprom.h"
 #include "gcode.h"
 #include "limits.h"
@@ -66,7 +65,7 @@
 // COMPILE-TIME ERROR CHECKING OF DEFINE VALUES:
 extern volatile int jog_z_action;
 extern volatile bool machine_in_motion;
-extern volatile unsigned long millis;
+extern volatile uint32_t millis;
 extern volatile uint16_t analogVal;
 extern volatile uint16_t analogSetVal;
 

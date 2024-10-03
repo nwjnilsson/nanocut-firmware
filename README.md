@@ -27,9 +27,11 @@ pulses for the Z-axis are generated manually using overflow interrupts on timer 
 To keep the code simple, certain assumptions about the hardware are made.
 
 - The extent of the Z axis must be in the range $[-Z,0]$
-- The THC does not care about acceleration values set for the Z axis in machine
+- ~~The THC does not care about acceleration values set for the Z axis in machine
 parameters. You need to take this into consideration when tuning your speeds and
-selecting the stepper for your Z axis.
+selecting the stepper for your Z axis.~~
+- Acceleration support has been added but not extensively tested. Make sure to set
+reasonable values...
 
 
 ## Getting GRBL to run on the Arduino Nano

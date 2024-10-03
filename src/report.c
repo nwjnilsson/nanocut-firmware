@@ -326,8 +326,7 @@ void report_gcode_modes()
     } else { report_util_gcode_modes_M(); serial_write('9'); }
   #else
     report_util_gcode_modes_M();
-    if (gc_state.modal.coolant) { serial_write('8'); }
-    else { serial_write('9'); }
+    serial_write('9');
   #endif
 
   #ifdef ENABLE_PARKING_OVERRIDE_CONTROL
@@ -472,13 +471,13 @@ void report_realtime_status()
   float print_position[N_AXIS];
   system_convert_array_steps_to_mpos(print_position,current_position);
 
-  printPgmString(PSTR(" { "));
+  printPgmString(PSTR(" { \"STATUS\":"));
   switch (sys.state) {
-    case STATE_IDLE: printPgmString(PSTR("\"STATUS\": \"Idle\"")); break;
-    case STATE_CYCLE: printPgmString(PSTR("\"STATUS\": \"Run\"")); break;
-    case STATE_JOG: printPgmString(PSTR("\"STATUS\": \"Jog\"")); break;
-    case STATE_HOLD: printPgmString(PSTR("\"STATUS\": \"Hold\"")); break;
-    default: printPgmString(PSTR("\"STATUS\": \"Unknown\"")); break;
+    case STATE_IDLE: printPgmString(PSTR(" \"Idle\"")); break;
+    case STATE_CYCLE: printPgmString(PSTR(" \"Run\"")); break;
+    case STATE_JOG: printPgmString(PSTR(" \"Jog\"")); break;
+    case STATE_HOLD: printPgmString(PSTR(" \"Hold\"")); break;
+    default: printPgmString(PSTR(" \"Unknown\"")); break;
   }
   printPgmString(PSTR(", \"MCS\": { \"x\": "));
   printFloat_CoordValue(print_position[0]);
@@ -525,19 +524,11 @@ void report_realtime_status()
   }
   printPgmString(PSTR(" }"));
   report_util_line_feed();
-  if(PINC & (1<<PC5)) //We are crashing torch into work piece! Report it!
+  if(!(PINC & (1<<PC5)) && machine_in_motion) //We are crashing torch into work piece! Report it!
   {
-    //Do nothing
+    printPgmString(PSTR("[CRASH]"));
+    report_util_line_feed();
   }
-  else
-  {
-    if (machine_in_motion == true)
-    {
-      printPgmString(PSTR("[CRASH]"));
-      report_util_line_feed();
-    }
-  }
-  
 }
 void report_realtime_status_orig()
 {
@@ -701,8 +692,7 @@ void report_realtime_status_orig()
       print_uint8_base10(sys.spindle_speed_ovr);
 
       uint8_t sp_state = spindle_get_state();
-      uint8_t cl_state = coolant_get_state();
-      if (sp_state || cl_state) {
+      if (sp_state) {
         printPgmString(PSTR("|A:"));
         if (sp_state) { // != SPINDLE_STATE_DISABLE
           #ifdef VARIABLE_SPINDLE 
@@ -717,7 +707,6 @@ void report_realtime_status_orig()
             else { serial_write('C'); } // CCW
           #endif
         }
-        if (cl_state & COOLANT_STATE_FLOOD) { serial_write('F'); }
         #ifdef ENABLE_M7
           if (cl_state & COOLANT_STATE_MIST) { serial_write('M'); }
         #endif

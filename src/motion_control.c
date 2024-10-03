@@ -371,7 +371,6 @@ void mc_reset()
 
     // Kill spindle and coolant.
     spindle_stop();
-    coolant_stop();
 
     // Kill steppers only if in any motion state, i.e. cycle, actively holding, or homing.
     // NOTE: If steppers are kept enabled via the step idle delay setting, this also keeps
