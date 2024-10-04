@@ -1,5 +1,7 @@
+
 #include "grbl.h"
 #include "nuts_bolts.h"
+#include <stdint.h>
 
 volatile uint32_t millis;
 volatile uint32_t arc_stablization_timer;
@@ -58,14 +60,14 @@ void thc_update()
     }
 }
 
-//void debug_print(uint32_t num) {
-//    while (num--) {
-//        PORTD |= (1 << PD7);
-//        delay_us(2);
-//        PORTD &= ~(1 << PD7);
-//        delay_us(2);
-//    }
-//}
+void debug_print(uint32_t num) {
+    while (num--) {
+        PORTD |= (1 << PD7);
+        delay_us(1);
+        PORTD &= ~(1 << PD7);
+        delay_us(1);
+    }
+}
 void setup_timer_2(uint8_t count) {
     TCCR2B = 0x00;          //Disable Timer2 while we set it up
     TCNT2  = count; //Reset Timer Count
@@ -98,26 +100,80 @@ void thc_init()
 }
 
 void decrement_speed() {
-    thc_speed_offset -= pp_change_rate;
+    if (thc_speed_offset > -THC_SPEED_OFFSET_LIMIT)
+        thc_speed_offset -= pp_change_rate;
 }
 void increment_speed() {
-    thc_speed_offset += pp_change_rate;
+    if (thc_speed_offset < THC_SPEED_OFFSET_LIMIT)
+        thc_speed_offset += pp_change_rate;
 }
 
-// Flips the step bit and updates the machine position
+void set_dir_up() {
+    if (settings.dir_invert_mask & (1 << Z_AXIS))
+        DIRECTION_PORT |= (1 << Z_DIRECTION_BIT);
+    else
+        DIRECTION_PORT &= ~(1 << Z_DIRECTION_BIT);
+}
+
+void set_dir_down() {
+    if (settings.dir_invert_mask & (1 << Z_AXIS))
+        DIRECTION_PORT &= ~(1 << Z_DIRECTION_BIT);
+    else {
+        DIRECTION_PORT |= (1 << Z_DIRECTION_BIT);
+    }
+}
+
+// If it is time to generate a step pulse, flip the step bit and updates the
+// machine position. It is assumed that the Z-axis range is [-Z, 0]
 void thc_step(int8_t heading)
 {
-    int32_t current_steps = sys_position[Z_AXIS];
-    // This assumes that the z-axis range is [-D, 0]
-    if ( ((heading == UP) && (current_steps < 0)) ||
-         ((heading == DOWN) && (current_steps > z_axis_steps_limit)) )
-    {
+    if(thc_pulse_counter >= thc_pulse_period) {
+        thc_pulse_counter = thc_pulse_counter - thc_pulse_period;
         // Step
-        PORTD |= (1 << PD4);
+        STEP_PORT |= (1 << Z_STEP_BIT);
         delay_us(THC_PULSE_TIME_US);
-        PORTD &= ~(1 << PD4);
+        STEP_PORT &= ~(1 << Z_STEP_BIT);
         sys_position[Z_AXIS] += heading;
+        // Update current pulse period
+        thc_pulse_period = THC_PULSE_PERIOD_MAX - abs(thc_speed_offset);
     }
+}
+
+void thc_step_down() {
+    int32_t current_steps = sys_position[Z_AXIS];
+    if (current_steps > z_axis_steps_limit)
+        thc_step(DOWN);
+}
+
+void thc_step_up() {
+    int32_t current_steps = sys_position[Z_AXIS];
+    if (current_steps < 0)
+        thc_step(UP);
+}
+
+// Update speed, direction etc, return true if the action is 'up' or 'stay',
+// but the torch is still moving down due to ongoing deceleration.
+bool decelerating_down() {
+    if (thc_speed_offset < -((int32_t)pp_change_rate)) {
+        increment_speed();
+        set_dir_down();
+        thc_step_down();
+        return true;
+    }
+    else
+        return false;
+}
+
+// Same as above, but opposite
+bool decelerating_up() {
+    if (thc_speed_offset > (int32_t)pp_change_rate) {
+        decrement_speed();
+        set_dir_up();
+        thc_step_up();
+        return true;
+    }
+    else
+        return false;
 }
 
 /* Timer 2 overflow interrupt subroutine
@@ -138,67 +194,31 @@ ISR(TIMER2_OVF_vect)
     thc_ctrl_counter += 100;
     thc_pulse_counter += 100;
 
-    if( thc_ctrl_counter >= THC_UPDATE_PERIOD_US )
+    if (thc_ctrl_counter >= THC_UPDATE_PERIOD_US)
     {
         millis += THC_UPDATE_PERIOD_MS;
         thc_ctrl_counter = thc_ctrl_counter - THC_UPDATE_PERIOD_US;
         if (machine_in_motion) thc_update(); // Evaluate what the THC should be doing
     }
     
-    bool invert = false; // invert direction? if direction quickly changes from up to down, we invert
-                         // the direction while decelerating. when the speed reaches 0, we stop inverting
-    int8_t decel_h = STAY;
-    if (((jog_z_action == STAY) || (jog_z_action == DOWN)) && (thc_speed_offset > (int32_t)pp_change_rate))
-        decel_h = UP;
-    else if (((jog_z_action == STAY) || (jog_z_action == UP)) && (thc_speed_offset < -((int32_t)pp_change_rate)))
-        decel_h = DOWN;
-
-    if (decel_h == DOWN) {
-        increment_speed();
+    if (jog_z_action == DOWN) {
+       if (!decelerating_up()) {
+         decrement_speed(); // accelerate down
+         set_dir_down();
+         thc_step_down();
+       }
     }
-    else if (decel_h == UP) {
-        decrement_speed();
+    else if (jog_z_action == UP) {
+        if (!decelerating_down()) {
+            increment_speed(); // accelerate up
+            set_dir_up();
+            thc_step_up();
+        }
     }
-    else {
-        // thc_speed_offset is in the vicinity of 0, disable the pulses
-        if (jog_z_action == UP && (thc_speed_offset < THC_SPEED_OFFSET_LIMIT)) {
-            increment_speed();
-            invert = thc_speed_offset < 0;
-        }
-        else if (jog_z_action == DOWN && (thc_speed_offset > -THC_SPEED_OFFSET_LIMIT)) {
-            decrement_speed();
-            invert = thc_speed_offset > 0;
-        }
-        else if (jog_z_action == STAY)
-            // decel_h == STAY && jog_z_action == STAY
-            thc_pulse_counter = 0;
-
+    // jog_z_action == STAY
+    else if (!decelerating_up() && !decelerating_down()) {
+        thc_pulse_counter = 0;
     }
-    invert = !invert != !(settings.dir_invert_mask & (1 << Z_AXIS)); // xor, as two inverts cancel each other out
-
-    if(thc_pulse_counter >= thc_pulse_period)
-    {
-        // Generate pulse
-        // Set to the overflow to try to compensate for inaccuracies
-        thc_pulse_counter = thc_pulse_counter - thc_pulse_period;
-        // Set direction
-        int8_t heading = (decel_h == STAY) ? jog_z_action : decel_h;
-        if ((heading == UP && invert)    ||
-            (heading == DOWN && !invert) )
-        {
-            PORTD |= (1 << PD7);
-        }
-        else
-        {
-            PORTD &= ~(1 << PD7);
-        }
-        thc_step(heading);
-
-        // Update current pulse period
-        thc_pulse_period = THC_PULSE_PERIOD_MAX - abs(thc_speed_offset);
-
-    }
-
     // Try to compensate for irq overhead by adding TCNT2
     uint8_t load_val = min(255, (TCNT2 - start) + TIM2_LOAD_VAL);
     setup_timer_2(load_val);
