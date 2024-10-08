@@ -514,7 +514,7 @@ void report_realtime_status()
     printPgmString(PSTR("false"));
   }
   printPgmString(PSTR(", \"ARC_OK\": "));
-  if(PINC & (1<<PC1))
+  if(CONTROL_PIN & (1<<ARC_OK_BIT))
   {
     printPgmString(PSTR("true"));
   }
@@ -524,7 +524,7 @@ void report_realtime_status()
   }
   printPgmString(PSTR(" }"));
   report_util_line_feed();
-  if(!(PINC & (1<<PC5)) && machine_in_motion) //We are crashing torch into work piece! Report it!
+  if(!(CONTROL_PIN & (1<<PROBE_BIT)) && machine_in_motion) //We are crashing torch into work piece! Report it!
   {
     printPgmString(PSTR("[CRASH]"));
     report_util_line_feed();

@@ -26,7 +26,7 @@ volatile uint16_t accel_counter = 0;
 
 void thc_update()
 {
-  if (CONTROL_PORT & (1 << ARC_OK_BIT)) {
+  if (CONTROL_PIN & (1 << ARC_OK_BIT)) {
     // We don't have an arc_ok signal
     jog_z_action           = STAY;
     arc_stablization_timer = millis;
