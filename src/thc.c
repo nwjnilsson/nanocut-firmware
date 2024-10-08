@@ -1,36 +1,28 @@
 #include "grbl.h"
 
-// The arc stabilization time should be fetched from settings. The setting
-// has been created for the control software but the implementation was never
-// finished so it is not communicated to the controller. Since the ARC OK signal
-// is connected to the feed hold, I suppose grbl won't start cutting until the
-// arc is fairly stable anyway. Maybe this is why the original author settled
-// for hardcoding this value here.
-#define ARC_STABILIZATION_TIME_MS 3000
-#define THC_ON_THRESHOLD 30
-#define THC_ALLOWED_ERROR 10
-
-#define THC_UPDATE_PERIOD_US 5000U
+// Pulse period / acceleration related
+#define SPEED_PROFILE_RESOLUTION 100
+#define THC_UPDATE_PERIOD_TICKS 50
 #define THC_UPDATE_PERIOD_MS 5
 #define TIM2_LOAD_VAL 206
 #define TIM2_LOAD_VAL_MAX 255
-#define THC_PULSE_PERIOD_MAX 0x7FFF
-#define THC_SPEED_OFFSET_LIMIT                                                 \
-  ((int32_t) THC_PULSE_PERIOD_MAX - (int32_t) thc_pulse_period_target)
-
-
+#define THC_PULSE_PERIOD_MAX 0x7FFFU
+#define THC_SPEED_LIMIT (SPEED_PROFILE_RESOLUTION - 1)
+#define ISR_TICKS_PER_MINUTE (1e4 * 60.f)
 
 // globals used by THC, I'm too lazy to make something better
-volatile uint32_t millis;
-volatile uint32_t arc_stablization_timer;
-volatile uint16_t thc_pulse_counter;
-volatile uint16_t thc_ctrl_counter;
-volatile int32_t  thc_speed_offset;
+volatile uint32_t millis                 = 0;
+volatile uint32_t arc_stablization_timer = 0;
+volatile uint16_t thc_pulse_counter      = 0;
+volatile uint16_t thc_ctrl_counter       = 0;
 int32_t           z_axis_steps_limit;
-volatile uint16_t thc_pulse_period;
-uint16_t          thc_pulse_period_target;
-uint16_t          pp_change_rate; // amount to increase/decrease pulse period
-                                  // when accelerating/decelerating
+
+// Array of pulse periods, slowest at index 0
+uint16_t speed_profile[SPEED_PROFILE_RESOLUTION];
+// used to index the speed profile, sign indicates direction
+volatile int16_t  thc_speed = 0;
+uint16_t          accel_threshold;
+volatile uint16_t accel_counter = 0;
 
 void thc_update()
 {
@@ -86,26 +78,22 @@ void setup_timer_2(uint8_t count)
 // Runs every time settings are written to the Z-axis as well as on startup
 void thc_init()
 {
-  arc_stablization_timer = 0;
-  millis                 = 0;
-  // Calculate target pulse period from max feedrate
-  thc_pulse_period_target = ceil(
-    (1e6 * 60.f) / (settings.max_rate[Z_AXIS] * settings.steps_per_mm[Z_AXIS]));
-  thc_pulse_period = THC_PULSE_PERIOD_MAX;
-  // Acceleration stuff
-  float delta_pulse_period = THC_PULSE_PERIOD_MAX - thc_pulse_period_target;
-  float tick_change_rate_minute =
-    (delta_pulse_period * settings.acceleration[Z_AXIS]) /
-    settings.max_rate[Z_AXIS]; // change in thc ticks per minute
-  pp_change_rate =
-    ceil(tick_change_rate_minute / (1e4 * 60.f)); // divide by number of thc
-                                                  // ticks per minute
-  // ---
+  // Speed profile calculation
+  float speed_step = settings.max_rate[Z_AXIS] / SPEED_PROFILE_RESOLUTION;
+  speed_profile[0] = THC_PULSE_PERIOD_MAX;
+  for (int16_t i = 0; i < SPEED_PROFILE_RESOLUTION; ++i) {
+    speed_profile[i] =
+      min(THC_PULSE_PERIOD_MAX,
+          ceil((ISR_TICKS_PER_MINUTE) /
+               ((i + 1) * speed_step * settings.steps_per_mm[Z_AXIS])));
+  }
+
+  // After this many ISR ticks, we can increase/decrease the speed
+  accel_threshold =
+    ceil(speed_step * ISR_TICKS_PER_MINUTE / settings.acceleration[Z_AXIS]);
+
   z_axis_steps_limit =
     (int32_t) settings.max_travel[Z_AXIS] * settings.steps_per_mm[Z_AXIS];
-  thc_pulse_counter = 0;
-  thc_ctrl_counter  = 0;
-  thc_speed_offset  = 0;
 
   // Setup Timer2
   setup_timer_2(TIM2_LOAD_VAL);
@@ -113,13 +101,22 @@ void thc_init()
 
 void decrement_speed()
 {
-  if (thc_speed_offset > -THC_SPEED_OFFSET_LIMIT)
-    thc_speed_offset -= pp_change_rate;
+  if (thc_speed > -THC_SPEED_LIMIT) {
+    if (accel_counter++ >= accel_threshold) {
+      thc_speed--;
+      accel_counter = 0;
+    }
+  }
 }
+
 void increment_speed()
 {
-  if (thc_speed_offset < THC_SPEED_OFFSET_LIMIT)
-    thc_speed_offset += pp_change_rate;
+  if (thc_speed < THC_SPEED_LIMIT) {
+    if (accel_counter++ >= accel_threshold) {
+      thc_speed++;
+      accel_counter = 0;
+    }
+  }
 }
 
 void set_dir_up()
@@ -143,15 +140,14 @@ void set_dir_down()
 // machine position. It is assumed that the Z-axis range is [-Z, 0]
 void thc_step(int8_t heading)
 {
-  if (thc_pulse_counter >= thc_pulse_period) {
-    thc_pulse_counter = thc_pulse_counter - thc_pulse_period;
+  uint16_t current_period = speed_profile[abs(thc_speed)];
+  if (thc_pulse_counter >= current_period) {
+    thc_pulse_counter = thc_pulse_counter - current_period;
     // Step
     STEP_PORT |= (1 << Z_STEP_BIT);
     delay_us(THC_PULSE_TIME_US);
     STEP_PORT &= ~(1 << Z_STEP_BIT);
     sys_position[Z_AXIS] += heading;
-    // Update current pulse period
-    thc_pulse_period = THC_PULSE_PERIOD_MAX - abs(thc_speed_offset);
   }
 }
 
@@ -169,11 +165,11 @@ void thc_step_up()
     thc_step(UP);
 }
 
-// Update speed, direction etc, return true if the action is 'up' or 'stay',
+// Update speed, direction etc. Assumes that the current action is UP or STAY.
 // but the torch is still moving down due to ongoing deceleration.
 bool decelerating_down()
 {
-  if (thc_speed_offset < -((int32_t) pp_change_rate)) {
+  if (thc_speed < 0) {
     increment_speed();
     set_dir_down();
     thc_step_down();
@@ -186,7 +182,7 @@ bool decelerating_down()
 // Same as above, but opposite
 bool decelerating_up()
 {
-  if (thc_speed_offset > (int32_t) pp_change_rate) {
+  if (thc_speed > 0) {
     decrement_speed();
     set_dir_up();
     thc_step_up();
@@ -214,12 +210,12 @@ bool decelerating_up()
 ISR(TIMER2_OVF_vect)
 {
   uint8_t start = TCNT2;
-  thc_ctrl_counter += 100;
-  thc_pulse_counter += 100;
+  thc_ctrl_counter++;
+  thc_pulse_counter++;
 
-  if (thc_ctrl_counter >= THC_UPDATE_PERIOD_US) {
+  if (thc_ctrl_counter >= THC_UPDATE_PERIOD_TICKS) {
     millis += THC_UPDATE_PERIOD_MS;
-    thc_ctrl_counter = thc_ctrl_counter - THC_UPDATE_PERIOD_US;
+    thc_ctrl_counter = thc_ctrl_counter - THC_UPDATE_PERIOD_TICKS;
     if (machine_in_motion)
       thc_update(); // Evaluate what the THC should be doing
   }

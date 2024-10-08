@@ -32,7 +32,10 @@ parameters. You need to take this into consideration when tuning your speeds and
 selecting the stepper for your Z axis.~~
 - Acceleration support has been added but not extensively tested. Make sure to set
 reasonable values... To fit the code on the Nano I removed code related to coolant
-control from grbl. I don't see it being used for plasma cutters anyway.
+control from grbl. I don't see it being used for plasma cutters anyway. When a Z
+axis limit is reached, the pulses will stop abruptly, as I didn't have time or
+energy to continue refining the implementation. But for simple torch height control,
+this should be more than good enough.
 
 
 ## Getting GRBL to run on the Arduino Nano
