@@ -4,7 +4,7 @@ This repository was originally forked from
 which is a [GRBL](https://github.com/grbl/grbl)-based firmware with support for
 adding a Torch Height Controller for CNC plasma cutting. The same author has
 also created the control software [NcPilot](https://github.com/UnfinishedBusiness/ncPilot)
-(my fork of that can be found [here](https://github.com/gfx-jonte/nanocut-control)),
+(my fork of that can be found [here](https://github.com/nwjnilsson/nanocut-control)),
 which is a cross-platform g-code sender compatible with this firmware.
 
 At the moment I don't remember why I had to fork it but for some reason the
