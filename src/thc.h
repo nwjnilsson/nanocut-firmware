@@ -7,8 +7,8 @@
 
 // The duration that a step pulse is high. Normally around 10 microseconds, but
 // I'm using a busy wait to generate the step pulse so it's better to make it as
-// short as possible
-#define THC_PULSE_TIME_US 5
+// short as the hardware will allow
+#define THC_PULSE_TIME_US 2
 
 // The amount of time to wait (after cutting starts) before the THC is engaged.
 // The arc stabilization time should be fetched from settings. The setting
