@@ -216,7 +216,6 @@ ISR(TIMER2_OVF_vect)
   // Re-enable interrupts to give GRBL stuff more room to breathe
   sei();
   uint8_t start = TCNT2;
-  PORTD |= (1 << PD2);
   thc_ctrl_counter++;
   thc_pulse_counter++;
 
@@ -247,6 +246,5 @@ ISR(TIMER2_OVF_vect)
   // Try to compensate for irq overhead by adding TCNT2
   uint8_t load_val = min(TIM2_LOAD_VAL_MAX, (TCNT2 - start) + TIM2_LOAD_VAL);
   setup_timer_2(load_val);
-  PORTD &= ~(1 << PD2);
   busy = false;
 }
