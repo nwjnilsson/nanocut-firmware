@@ -4,18 +4,20 @@
 #define SPEED_PROFILE_RESOLUTION 100
 #define THC_UPDATE_PERIOD_TICKS 50
 #define THC_UPDATE_PERIOD_MS 5
-#define TIM2_LOAD_VAL 207
+#define TIM2_LOAD_VAL 208
 #define TIM2_LOAD_VAL_MAX 255
 #define THC_PULSE_PERIOD_MAX 0x7FFFU
 #define THC_SPEED_LIMIT (SPEED_PROFILE_RESOLUTION - 1)
 #define ISR_TICKS_PER_MINUTE (1e4 * 60.f)
 
 // globals used by THC, I'm too lazy to make something better
-volatile uint32_t millis                 = 0;
-volatile uint32_t arc_stablization_timer = 0;
-volatile uint16_t thc_pulse_counter      = 0;
-volatile uint16_t thc_ctrl_counter       = 0;
-int32_t           z_axis_steps_limit;
+volatile uint32_t        millis                 = 0;
+static volatile uint32_t arc_stablization_timer = 0;
+static volatile uint16_t thc_pulse_counter      = 0;
+static volatile uint16_t thc_ctrl_counter       = 0;
+static volatile bool     busy                   = false;
+
+static int32_t z_axis_steps_limit;
 
 // Array of pulse periods, slowest at index 0
 uint16_t speed_profile[SPEED_PROFILE_RESOLUTION];
@@ -26,30 +28,25 @@ volatile uint16_t accel_counter = 0;
 
 void thc_update()
 {
-  if (CONTROL_PIN & (1 << ARC_OK_BIT)) {
-    // We don't have an arc_ok signal
-    jog_z_action           = STAY;
-    arc_stablization_timer = millis;
-  }
-  else {
-    // We have an arc_ok signal!
-    // Our ADC input is 2:1 voltage divider so pre-divider is 0-10V and post
-    // divider is 0-5V. ADC resolution is 0-1024; Each ADC tick is 0.488 Volts
-    // pre-divider (AV+) at 1:50th scale! or 0.009 volts at scaled scale (0-10)
-    // Wait 3 secends for arc voltage to stabalize
-    if ((millis - arc_stablization_timer) > ARC_STABILIZATION_TIME_MS) {
-      if (analogSetVal > THC_ON_THRESHOLD) {
-        if ((analogVal > (analogSetVal - THC_ALLOWED_ERROR)) &&
-            (analogVal < (analogSetVal + THC_ALLOWED_ERROR))) {
-          jog_z_action = STAY;
+  if (machine_in_motion) {
+    if (CONTROL_PIN & (1 << ARC_OK_BIT)) {
+      // We don't have an arc_ok signal
+      jog_z_action           = STAY;
+      arc_stablization_timer = millis;
+    }
+    else if (analogSetVal > THC_ON_THRESHOLD &&
+             (millis - arc_stablization_timer) > ARC_STABILIZATION_TIME_MS) {
+      // We have an arc_ok signal, and THC is 'on'
+      // Wait 3 seconds for arc voltage to stabalize
+      if ((millis - arc_stablization_timer) > ARC_STABILIZATION_TIME_MS) {
+        if (analogVal > analogSetVal + THC_ALLOWED_ERROR) {
+          jog_z_action = DOWN;
+        }
+        else if (analogVal < analogSetVal - THC_ALLOWED_ERROR) {
+          jog_z_action = UP;
         }
         else {
-          if (analogVal > analogSetVal) {
-            jog_z_action = DOWN;
-          }
-          else {
-            jog_z_action = UP;
-          }
+          jog_z_action = STAY;
         }
       }
     }
@@ -206,18 +203,27 @@ bool decelerating_up()
  * problems. The idea is that the THC should only be able to move the torch when
  * there is an arc OK signal or when PGDOWN/PGUP is pressed in the control
  * software.
+ *
+ * The implementation looks pretty strange and the reason for that is mostly
+ * because of space optimizations. The ISR takes about 11us on average.
  */
 ISR(TIMER2_OVF_vect)
 {
+  if (busy) {
+    return;
+  }
+  busy = true;
+  // Re-enable interrupts to give GRBL stuff more room to breathe
+  sei();
   uint8_t start = TCNT2;
+  PORTD |= (1 << PD2);
   thc_ctrl_counter++;
   thc_pulse_counter++;
 
   if (thc_ctrl_counter >= THC_UPDATE_PERIOD_TICKS) {
     millis += THC_UPDATE_PERIOD_MS;
     thc_ctrl_counter = thc_ctrl_counter - THC_UPDATE_PERIOD_TICKS;
-    if (machine_in_motion)
-      thc_update(); // Evaluate what the THC should be doing
+    thc_update(); // Evaluate what the THC should be doing
   }
 
   if (jog_z_action == DOWN) {
@@ -241,4 +247,6 @@ ISR(TIMER2_OVF_vect)
   // Try to compensate for irq overhead by adding TCNT2
   uint8_t load_val = min(TIM2_LOAD_VAL_MAX, (TCNT2 - start) + TIM2_LOAD_VAL);
   setup_timer_2(load_val);
+  PORTD &= ~(1 << PD2);
+  busy = false;
 }

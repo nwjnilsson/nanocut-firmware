@@ -4,21 +4,24 @@ This repository was originally forked from
 which is a [GRBL](https://github.com/grbl/grbl)-based firmware with support for
 adding a Torch Height Controller for CNC plasma cutting. The same author has
 also created the control software [NcPilot](https://github.com/UnfinishedBusiness/ncPilot)
-(my fork of that can be found [here](https://github.com/nwjnilsson/nanocut-control)),
+(my fork of that can be found [here](https://github.com//nanocut-control)),
 which is a cross-platform g-code sender compatible with this firmware.
 
 At the moment I don't remember why I had to fork it but for some reason the
 original firmware didn't work very well for me. The problem was that the THC
 was moving way too slowly. I have refactored the code a bit and broken out the
 THC stuff in `thc.c`. I've made some changes so that the THC uses timer 2 to
-generate interrupts at a frequency of 10 KHz (approximately, I think GRBL does
-some stuff that messes up the timing slightly) to generate the step pulses.
-When the THC step pulse goes high, it busy waits for 10 &mu;s before setting the
-pin low again. It works well enough for my use case. Do _not_ expect this to
-work if you need very high pulse frequencies, i.e if your desired
-`feedrate(mm/min) * steps_per_mm` is some number much higher than ~120k (what
-I tested with). If you need more speed, experiment with gear/pulley ratios or
-optimize `ISR(TIMER2_OVF_vect)` to reach higher pulse frequencies.
+generate interrupts at a frequency of 10 KHz to generate the step pulses.
+When the THC step pulse goes high, it busy waits for `THC_PULSE_TIME_US`
+microseconds before setting the pin low again. It works well enough for my use
+case. Do _not_ expect this to work if you need very high pulse frequencies, i.e
+if your desired `feedrate(mm/min) * steps_per_mm` is some number much higher
+than ~120k (what I tested with). If you need more speed, experiment with
+gear/pulley ratios or optimize `ISR(TIMER2_OVF_vect)` to reach higher pulse
+frequencies.
+
+**tldr:** For a regular Nema23 on the Z axis, stay below a microstepping factor
+of 4, or disable it entirely to make the THC as fast as possible.
 
 ## Notes regarding the THC
 I have modified the original implementation of the THC but the solution is still
