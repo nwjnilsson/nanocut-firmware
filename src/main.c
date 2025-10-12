@@ -173,7 +173,6 @@ int main(void)
 
     // Start Grbl main loop. Processes program inputs and executes them.
     
-    PORTB &= ~(1 << PB0); //Set torch pin off
     protocol_main_loop();
 
   }

@@ -4,7 +4,7 @@ This repository was originally forked from
 which is a [GRBL](https://github.com/grbl/grbl)-based firmware with support for
 adding a Torch Height Controller for CNC plasma cutting. The same author has
 also created the control software [NcPilot](https://github.com/UnfinishedBusiness/ncPilot)
-(my fork of that can be found [here](https://github.com//nanocut-control)),
+(my fork of that can be found [here](https://github.com/nwjnilsson/nanocut-control)),
 which is a cross-platform g-code sender compatible with this firmware.
 
 At the moment I don't remember why I had to fork it but for some reason the
@@ -71,10 +71,10 @@ If you come across this repo and want to use the code for your machine, make sur
 | D12 | Y2 limit |
 | D13 | Unused |
 | A0 | Arc voltage (0-5V) |
-| A1 | Arc OK |
+| A1 | Torch enable |
 | A2 | Cycle start |
 | A3 | Y2 dir |
 | A4 | Y2 step |
-| A5 | Probe (touch torch) |
-| A6 | Coolant flood (not used) |
-| A7 | Torch enable |
+| A5 | Control reset |
+| A6 | Arc OK |
+| A7 | Probe (touch torch) |

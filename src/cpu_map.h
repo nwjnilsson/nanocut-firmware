@@ -302,10 +302,10 @@
   #define CONTROL_DDR       DDRC
   #define CONTROL_PIN       PINC
   #define CONTROL_PORT      PORTC
-  #define CONTROL_RESET_BIT         0  // Nano Analog Pin 0
-  #define CONTROL_FEED_HOLD_BIT     1  // Nano Analog Pin 1
+  #define CONTROL_RESET_BIT         5  // Nano Analog Pin 5
+  #define CONTROL_FEED_HOLD_BIT     6  // Nano Analog Pin 6
   #define CONTROL_CYCLE_START_BIT   2  // Nano Analog Pin 2
-  #define CONTROL_SAFETY_DOOR_BIT   1  // Nano Analog Pin 1 NOTE: Safety door is shared with feed hold. Enabled by config define.
+  #define CONTROL_SAFETY_DOOR_BIT   6  // Nano Analog Pin 6 NOTE: Safety door is shared with feed hold. Enabled by config define.
   #define CONTROL_INT       PCIE1  // Pin change interrupt enable pin
   #define CONTROL_INT_vect  PCINT1_vect
   #define CONTROL_PCMSK     PCMSK1 // Pin change interrupt register
@@ -316,7 +316,7 @@
   #define PROBE_DDR       DDRC
   #define PROBE_PIN       PINC
   #define PROBE_PORT      PORTC
-  #define PROBE_BIT       5  // Nano Analog Pin 5
+  #define PROBE_BIT       7  // Nano Analog Pin 7
   #define PROBE_MASK      (1<<PROBE_BIT)
 
   #if !defined(ENABLE_DUAL_AXIS)
@@ -338,7 +338,7 @@
       #define DUAL_DIRECTION_BIT  3  // Nano Analog Pin 3
       #define DIRECTION_MASK_DUAL ((1<<DUAL_DIRECTION_BIT))
 
-      
+
       #define DUAL_LIMIT_BIT    4    // Nano Digital Pin 12
       #define LIMIT_MASK        ((1<<X_LIMIT_BIT)|(1<<Y_LIMIT_BIT)|(1<<Z_LIMIT_BIT)|(1<<DUAL_LIMIT_BIT))
 
@@ -346,13 +346,13 @@
       // Coolant mist not supported with dual axis feature on Arduino Nano.
       #define COOLANT_FLOOD_DDR   DDRC
       #define COOLANT_FLOOD_PORT  PORTC
-      #define COOLANT_FLOOD_BIT   6  // Nano Analog pin 6
+      #define COOLANT_FLOOD_BIT   6  // Nano Analog pin 6 (not used)
 
       // Define spindle enable output pin.
       #define SPINDLE_ENABLE_DDR    DDRC
       #define SPINDLE_ENABLE_PORT   PORTC
       
-      #define SPINDLE_ENABLE_BIT    7  // Nano Analog Pin 7
+      #define SPINDLE_ENABLE_BIT    1  // Nano Analog Pin 1
       
 
     #endif
