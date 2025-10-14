@@ -299,13 +299,16 @@
 
   // Define user-control controls (cycle start, reset, feed hold) input pins.
   // NOTE: All CONTROLs pins must be on the same port and not on a port with other input pins (limits).
+  // Also remember that A6 and A7 on a nano don't have pull-ups and they are input only, might save you some confusion
+  #define UNUSED 6 // I just happen to not use A6
   #define CONTROL_DDR       DDRC
   #define CONTROL_PIN       PINC
   #define CONTROL_PORT      PORTC
-  #define CONTROL_RESET_BIT         5  // Nano Analog Pin 5
-  #define CONTROL_FEED_HOLD_BIT     6  // Nano Analog Pin 6
-  #define CONTROL_CYCLE_START_BIT   2  // Nano Analog Pin 2
-  #define CONTROL_SAFETY_DOOR_BIT   6  // Nano Analog Pin 6 NOTE: Safety door is shared with feed hold. Enabled by config define.
+  #define CONTROL_RESET_BIT         0
+  #define CONTROL_FEED_HOLD_BIT     2
+  #define CONTROL_CYCLE_START_BIT   UNUSED
+  #define CONTROL_ARC_VOLTAGE_PIN_BIT 7  // Analog pin 7
+  #define CONTROL_SAFETY_DOOR_BIT   2  // Nano Analog Pin 2 NOTE: Safety door is shared with feed hold. Enabled by config define.
   #define CONTROL_INT       PCIE1  // Pin change interrupt enable pin
   #define CONTROL_INT_vect  PCINT1_vect
   #define CONTROL_PCMSK     PCMSK1 // Pin change interrupt register
@@ -346,7 +349,7 @@
       // Coolant mist not supported with dual axis feature on Arduino Nano.
       #define COOLANT_FLOOD_DDR   DDRC
       #define COOLANT_FLOOD_PORT  PORTC
-      #define COOLANT_FLOOD_BIT   6  // Nano Analog pin 6 (not used)
+      #define COOLANT_FLOOD_BIT   UNUSED
 
       // Define spindle enable output pin.
       #define SPINDLE_ENABLE_DDR    DDRC
@@ -371,3 +374,4 @@
 */
 
 #endif
+ 

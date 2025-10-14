@@ -100,11 +100,11 @@ int main(void)
 
 
 
-  DDRC &= ~(1<<DDC1); // Set A1 as input for Arc Ok
-  PORTC |= (1<<PC1);  // Set A1 internally pulled-up
+  DDRC &= ~(1<<CONTROL_FEED_HOLD_BIT); // Set arc ok as input for Arc Ok
+  PORTC |= (1<<CONTROL_FEED_HOLD_BIT);  // Set arc ok internally pulled-up
 
   //Start first ADC conversion
-  ADMUX = (ADMUX & 0xF0) | (0 & 0x0F);
+  ADMUX = (ADMUX & 0xF0) | (CONTROL_ARC_VOLTAGE_PIN_BIT & 0x0F);
   ADCSRA |= (1<<ADSC);
 
   // Initialize system upon power-up.
