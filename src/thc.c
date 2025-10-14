@@ -15,7 +15,6 @@ volatile uint32_t        millis                 = 0;
 static volatile uint32_t arc_stablization_timer = 0;
 static volatile uint16_t thc_pulse_counter      = 0;
 static volatile uint16_t thc_ctrl_counter       = 0;
-static volatile bool     busy                   = false;
 
 static int32_t z_axis_steps_limit;
 
@@ -209,12 +208,6 @@ bool decelerating_up()
  */
 ISR(TIMER2_OVF_vect)
 {
-  if (busy) {
-    return;
-  }
-  busy = true;
-  // Re-enable interrupts to give GRBL stuff more room to breathe
-  sei();
   uint8_t start = TCNT2;
   thc_ctrl_counter++;
   thc_pulse_counter++;
@@ -246,5 +239,4 @@ ISR(TIMER2_OVF_vect)
   // Try to compensate for irq overhead by adding TCNT2
   uint8_t load_val = min(TIM2_LOAD_VAL_MAX, (TCNT2 - start) + TIM2_LOAD_VAL);
   setup_timer_2(load_val);
-  busy = false;
 }
