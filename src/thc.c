@@ -88,6 +88,7 @@ void thc_init()
   accel_threshold =
     ceil(speed_step * ISR_TICKS_PER_MINUTE / settings.acceleration[Z_AXIS]);
 
+  // The assumption is made that max_travel is positive
   z_axis_steps_limit =
     (int32_t) settings.max_travel[Z_AXIS] * settings.steps_per_mm[Z_AXIS];
 
@@ -147,17 +148,24 @@ void thc_step(int8_t heading)
   }
 }
 
+bool can_go(int dir) {
+  const int32_t current_steps = sys_position[Z_AXIS];
+  const float new_pos = current_steps + dir;
+  if ((bit_istrue(settings.homing_dir_mask,bit(Z_AXIS)) && new_pos <= -z_axis_steps_limit) ||
+      !(bit_istrue(settings.homing_dir_mask,bit(Z_AXIS)) && new_pos >= z_axis_steps_limit))
+    return true;
+ return false;
+}
+
 void thc_step_down()
 {
-  int32_t current_steps = sys_position[Z_AXIS];
-  if (current_steps > z_axis_steps_limit)
+  if (can_go(DOWN))
     thc_step(DOWN);
 }
 
 void thc_step_up()
 {
-  int32_t current_steps = sys_position[Z_AXIS];
-  if (current_steps < 0)
+  if (can_go(UP))
     thc_step(UP);
 }
 

@@ -319,7 +319,7 @@
   #define PROBE_DDR       DDRC
   #define PROBE_PIN       PINC
   #define PROBE_PORT      PORTC
-  #define PROBE_BIT       7  // Nano Analog Pin 7
+  #define PROBE_BIT       5  // Nano Analog Pin 5
   #define PROBE_MASK      (1<<PROBE_BIT)
 
   #if !defined(ENABLE_DUAL_AXIS)
