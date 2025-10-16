@@ -24,7 +24,7 @@
 // the control software. The target value is in the range [0-1024]
 // ('ADC ticks'), which is mapped to the real voltage (0-5V on the analog
 // input).
-#define THC_ON_THRESHOLD 200
+#define THC_ON_THRESHOLD 150
 
 // The allowed diff between the target value and the actual value (in ADC ticks)
 #define THC_ALLOWED_ERROR 10
