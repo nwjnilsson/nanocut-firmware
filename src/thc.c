@@ -133,10 +133,32 @@ void set_dir_down()
   }
 }
 
+bool can_go(int dir) {
+#ifdef HOMING_FORCE_SET_ORIGIN
+  if (bit_istrue(settings.homing_dir_mask,bit(Z_AXIS))) {
+    if (sys_position[Z_AXIS] + dir <= -z_axis_steps_limit && new_pos >= 0)
+      return true;
+  }
+  else {
+    if (sys_position[Z_AXIS] + dir >= z_axis_steps_limit && new_pos <= 0) {
+      return true;
+    }
+  }
+#else
+  if (sys_position[Z_AXIS] + dir >= z_axis_steps_limit && sys_position[Z_AXIS] + dir <= 0) {
+    return true;
+  }
+#endif
+  return false;
+}
+
 // If it is time to generate a step pulse, flip the step bit and updates the
 // machine position. It is assumed that the Z-axis range is [-Z, 0]
 void thc_step(int8_t heading)
 {
+  if (!can_go(heading)) {
+    return;
+  }
   uint16_t current_period = speed_profile[abs(thc_speed)];
   if (thc_pulse_counter >= current_period) {
     thc_pulse_counter = thc_pulse_counter - current_period;
@@ -148,27 +170,6 @@ void thc_step(int8_t heading)
   }
 }
 
-bool can_go(int dir) {
-  const int32_t current_steps = sys_position[Z_AXIS];
-  const float new_pos = current_steps + dir;
-  if ((bit_istrue(settings.homing_dir_mask,bit(Z_AXIS)) && new_pos <= -z_axis_steps_limit) ||
-      !(bit_istrue(settings.homing_dir_mask,bit(Z_AXIS)) && new_pos >= z_axis_steps_limit))
-    return true;
- return false;
-}
-
-void thc_step_down()
-{
-  if (can_go(DOWN))
-    thc_step(DOWN);
-}
-
-void thc_step_up()
-{
-  if (can_go(UP))
-    thc_step(UP);
-}
-
 // Update speed, direction etc. Assumes that the current action is UP or STAY.
 // but the torch is still moving down due to ongoing deceleration.
 bool decelerating_down()
@@ -176,11 +177,10 @@ bool decelerating_down()
   if (thc_speed < 0) {
     increment_speed();
     set_dir_down();
-    thc_step_down();
+    thc_step(DOWN);
     return true;
   }
-  else
-    return false;
+  return false;
 }
 
 // Same as above, but opposite
@@ -189,11 +189,10 @@ bool decelerating_up()
   if (thc_speed > 0) {
     decrement_speed();
     set_dir_up();
-    thc_step_up();
+    thc_step(UP);
     return true;
   }
-  else
-    return false;
+  return false;
 }
 
 /* Timer 2 overflow interrupt subroutine
@@ -230,14 +229,14 @@ ISR(TIMER2_OVF_vect)
     if (!decelerating_up()) {
       decrement_speed(); // accelerate down
       set_dir_down();
-      thc_step_down();
+      thc_step(DOWN);
     }
   }
   else if (jog_z_action == UP) {
     if (!decelerating_down()) {
       increment_speed(); // accelerate up
       set_dir_up();
-      thc_step_up();
+      thc_step(UP);
     }
   }
   // jog_z_action == STAY
