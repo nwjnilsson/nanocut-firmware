@@ -70,11 +70,11 @@ If you come across this repo and want to use the code for your machine, make sur
 | D11 | Z limit |
 | D12 | Y2 limit |
 | D13 | Unused |
-| A0 | Arc voltage (0-5V) |
+| A0 | Control reset |
 | A1 | Torch enable |
-| A2 | Cycle start |
+| A2 | Arc OK |
 | A3 | Y2 dir |
 | A4 | Y2 step |
-| A5 | Control reset |
-| A6 | Arc OK |
-| A7 | Probe (touch torch) |
+| A5 | Probe (touch torch)  |
+| A6 | Cycle start (unused) |
+| A7 | Arc voltage (0-5V) |

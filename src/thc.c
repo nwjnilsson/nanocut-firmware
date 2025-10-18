@@ -39,10 +39,10 @@ void thc_update()
       // Wait 3 seconds for arc voltage to stabalize
       if ((millis - arc_stablization_timer) > ARC_STABILIZATION_TIME_MS) {
         if (analogVal > analogSetVal + THC_ALLOWED_ERROR) {
-          jog_z_action = DOWN;
+          jog_z_action = WITHDRAW;
         }
         else if (analogVal < analogSetVal - THC_ALLOWED_ERROR) {
-          jog_z_action = UP;
+          jog_z_action = APPROACH;
         }
         else {
           jog_z_action = STAY;
@@ -172,24 +172,24 @@ void thc_step(int8_t heading)
 
 // Update speed, direction etc. Assumes that the current action is UP or STAY.
 // but the torch is still moving down due to ongoing deceleration.
-bool decelerating_down()
+bool decelerating_ap()
 {
   if (thc_speed < 0) {
     increment_speed();
     set_dir_down();
-    thc_step(DOWN);
+    thc_step(WITHDRAW);
     return true;
   }
   return false;
 }
 
 // Same as above, but opposite
-bool decelerating_up()
+bool decelerating_wd()
 {
   if (thc_speed > 0) {
     decrement_speed();
     set_dir_up();
-    thc_step(UP);
+    thc_step(APPROACH);
     return true;
   }
   return false;
@@ -225,22 +225,22 @@ ISR(TIMER2_OVF_vect)
     thc_update(); // Evaluate what the THC should be doing
   }
 
-  if (jog_z_action == DOWN) {
-    if (!decelerating_up()) {
+  if (jog_z_action == WITHDRAW) {
+    if (!decelerating_wd()) {
       decrement_speed(); // accelerate down
       set_dir_down();
-      thc_step(DOWN);
+      thc_step(WITHDRAW);
     }
   }
-  else if (jog_z_action == UP) {
-    if (!decelerating_down()) {
+  else if (jog_z_action == APPROACH) {
+    if (!decelerating_ap()) {
       increment_speed(); // accelerate up
       set_dir_up();
-      thc_step(UP);
+      thc_step(APPROACH);
     }
   }
   // jog_z_action == STAY
-  else if (!decelerating_up() && !decelerating_down()) {
+  else if (!decelerating_wd() && !decelerating_ap()) {
     thc_pulse_counter = 0;
   }
   // Try to compensate for irq overhead by adding TCNT2

@@ -33,7 +33,9 @@
 // Don't touch this part
 // -----------------------------------------------------------------------------
 #define ARC_OK_BIT CONTROL_FEED_HOLD_BIT
-enum THC_Action { DOWN = -1, STAY = 0, UP = 1 };
+
+// Action in terms of movement relative to origin. "Approach" means moving to origin/home.
+enum THC_Action { WITHDRAW = -1, STAY = 0, APPROACH = 1 };
 void thc_init();
 void thc_update();
 
