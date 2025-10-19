@@ -531,7 +531,9 @@ void report_realtime_status()
   }
   printPgmString(PSTR(" }"));
   report_util_line_feed();
-  if(!(CONTROL_PIN & (1<<PROBE_BIT)) && machine_in_motion) //We are crashing torch into work piece! Report it!
+  bool invert_flag = settings.flags & BITFLAG_INVERT_PROBE_PIN;
+  bool probe_control = CONTROL_PIN & (1<<PROBE_BIT);
+  if((invert_flag == probe_control) && machine_in_motion) //We are crashing torch into work piece! Report it!
   {
     printPgmString(PSTR("[CRASH]"));
     report_util_line_feed();
