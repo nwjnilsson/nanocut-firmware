@@ -473,11 +473,18 @@ void report_realtime_status()
 
   printPgmString(PSTR(" { \"STATUS\":"));
   switch (sys.state) {
-    case STATE_IDLE: printPgmString(PSTR(" \"Idle\"")); break;
-    case STATE_CYCLE: printPgmString(PSTR(" \"Run\"")); break;
-    case STATE_JOG: printPgmString(PSTR(" \"Jog\"")); break;
-    case STATE_HOLD: printPgmString(PSTR(" \"Hold\"")); break;
-    default: printPgmString(PSTR(" \"Unknown\"")); break;
+    case STATE_IDLE         : printPgmString(PSTR("\"IDLE\"")); break;
+    case STATE_ALARM      : printPgmString(PSTR("\"ALARM\"")); break;
+    case STATE_CHECK_MODE : printPgmString(PSTR("\"CHECK_MODE\"")); break;
+    case STATE_HOMING     : printPgmString(PSTR("\"HOMING\"")); break;
+    case STATE_CYCLE      : printPgmString(PSTR("\"CYCLE\"")); break;
+    case STATE_HOLD       : printPgmString(PSTR("\"HOLD\"")); break;
+    case STATE_JOG        : printPgmString(PSTR("\"JOG\"")); break;
+    case STATE_SAFETY_DOOR: printPgmString(PSTR("\"SAFETY_DOOR\"")); break;
+    case STATE_SLEEP      : printPgmString(PSTR("\"SLEEP\"")); break;
+    default: printPgmString(PSTR("\"Unknown\"")); break;
+
+
   }
   printPgmString(PSTR(", \"MCS\": { \"x\": "));
   printFloat_CoordValue(print_position[0]);
