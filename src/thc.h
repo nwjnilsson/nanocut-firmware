@@ -7,9 +7,10 @@
 
 // The duration that a step pulse is high. Normally around 10 microseconds, but
 // I'm using a busy wait to generate the step pulse so it's better to make it as
-// short as the hardware will allow. 2us is actually 5us according to my logic
-// analyzer. Try to stay below 10.
-#define THC_PULSE_TIME_US 2
+// short as the hardware will allow.
+// NOTE: I have not tested at what point things start to break down, but my
+// recommendation is to stay below ~7us.
+#define THC_PULSE_TIME_US 3
 
 // The amount of time to wait (after cutting starts) before the THC is engaged.
 // The arc stabilization time should be fetched from settings. The setting
@@ -34,7 +35,8 @@
 // -----------------------------------------------------------------------------
 #define ARC_OK_BIT CONTROL_FEED_HOLD_BIT
 
-// Action in terms of movement relative to origin. "Approach" means moving to origin/home.
+// Action in terms of movement relative to origin. "Approach" means moving to
+// origin/home.
 enum THC_Action { WITHDRAW = -1, STAY = 0, APPROACH = 1 };
 void thc_init();
 void thc_update();

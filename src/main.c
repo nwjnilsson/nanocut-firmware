@@ -36,20 +36,9 @@ volatile uint8_t sys_rt_exec_accessory_override; // Global realtime executor bit
 #endif
 
 
-
-
-unsigned long arc_stablization_timer;
-volatile int z_step_delay;
-
-// Value to store analog result
-volatile uint16_t analogVal;
-volatile uint16_t analogSetVal;
-
-
-
 ISR(ADC_vect){
   // Must read low first
-  analogVal = ADCL | (ADCH << 8);
+  thc_adc_value = ADCL | (ADCH << 8);
   // Not needed because free-running mode is enabled.
   // Set ADSC in ADCSRA (0x7A) to start another ADC conversion
   // ADCSRA |= B01000000;

@@ -140,8 +140,6 @@ uint8_t serial_read()
   }
 }
 
-volatile int jog_z_action;
-
 ISR(SERIAL_RX)
 {
   uint8_t data = UDR0;
@@ -154,10 +152,10 @@ ISR(SERIAL_RX)
     case CMD_STATUS_REPORT: system_set_exec_state_flag(EXEC_STATUS_REPORT); break; // Set as true
     case CMD_CYCLE_START:   system_set_exec_state_flag(EXEC_CYCLE_START); break; // Set as true
     case CMD_FEED_HOLD:     system_set_exec_state_flag(EXEC_FEED_HOLD); break; // Set as true
-    case CMD_Z_RUN_NEGATIVE: jog_z_action = WITHDRAW; break;
-    case CMD_Z_RUN_POSITIVE: jog_z_action = APPROACH; break;
+    case CMD_Z_RUN_NEGATIVE: thc_action = WITHDRAW; break;
+    case CMD_Z_RUN_POSITIVE: thc_action = APPROACH; break;
     case CMD_Z_RUN_CANCEL: {
-      jog_z_action = STAY;
+      thc_action = STAY;
       break;
     };
     default :

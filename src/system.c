@@ -232,9 +232,9 @@ uint8_t system_execute_line(char *line)
               v[vi] = line[i];
               vi++;
             }
-            analogSetVal = atoi(v);
+            thc_adc_target = atoi(v);
             //printPgmString(PSTR("Voltage = "));
-            //print_uint32_base10((uint16_t)analogSetVal);
+            //print_uint32_base10((uint16_t)thc_adc_target);
             //printPgmString(PSTR("\r\n"));
           }
         break;

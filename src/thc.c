@@ -1,7 +1,10 @@
 #include "grbl.h"
 
+#define likely(x) __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
+
 // Pulse period / acceleration related
-#define SPEED_PROFILE_RESOLUTION 100
+#define SPEED_PROFILE_RESOLUTION 100 // Can be reduced to save memory
 #define THC_UPDATE_PERIOD_TICKS 50
 #define THC_UPDATE_PERIOD_MS 5
 #define TIM2_LOAD_VAL 208
@@ -10,55 +13,36 @@
 #define THC_SPEED_LIMIT (SPEED_PROFILE_RESOLUTION - 1)
 #define ISR_TICKS_PER_MINUTE (1e4 * 60.f)
 
-// globals used by THC, I'm too lazy to make something better
-volatile uint32_t        millis                 = 0;
-static volatile uint32_t arc_stablization_timer = 0;
-static volatile uint16_t thc_pulse_counter      = 0;
-static volatile uint16_t thc_ctrl_counter       = 0;
+// Globals
+volatile uint32_t millis         = 0;
+volatile int      thc_action     = STAY;
+volatile uint16_t thc_adc_value  = 0;
+volatile uint16_t thc_adc_target = 0;
 
-static int32_t z_axis_steps_limit;
-
+// Internal
+static uint32_t arc_stablization_timer = 0;
+static uint16_t thc_pulse_counter      = 0;
+static uint16_t thc_ctrl_counter       = 0;
+static uint16_t current_period         = 0;
+static int32_t  z_axis_steps_limit;
 // Array of pulse periods, slowest at index 0
-uint16_t speed_profile[SPEED_PROFILE_RESOLUTION];
+static uint16_t speed_profile[SPEED_PROFILE_RESOLUTION];
 // used to index the speed profile, sign indicates direction
-volatile int16_t  thc_speed = 0;
-uint16_t          accel_threshold;
-volatile uint16_t accel_counter = 0;
+static int16_t  thc_speed = 0;
+static uint16_t accel_threshold;
+static uint16_t accel_counter = 0;
+static bool     thc_busy      = false;
 
-void thc_update()
-{
-  if (machine_in_motion) {
-    if (CONTROL_PIN & (1 << ARC_OK_BIT)) {
-      // We don't have an arc_ok signal
-      jog_z_action           = STAY;
-      arc_stablization_timer = millis;
-    }
-    else if (analogSetVal > THC_ON_THRESHOLD &&
-             (millis - arc_stablization_timer) > ARC_STABILIZATION_TIME_MS) {
-      // We have an arc_ok signal, and THC is 'on'
-      // Wait 3 seconds for arc voltage to stabalize
-      if ((millis - arc_stablization_timer) > ARC_STABILIZATION_TIME_MS) {
-        if (analogVal > analogSetVal + THC_ALLOWED_ERROR) {
-          jog_z_action = WITHDRAW;
-        }
-        else if (analogVal < analogSetVal - THC_ALLOWED_ERROR) {
-          jog_z_action = APPROACH;
-        }
-        else {
-          jog_z_action = STAY;
-        }
-      }
-    }
-  }
-}
+enum ArcStatus { ARC_NOT_OK, ARC_OK = 1 << ARC_OK_BIT };
 
-// void debug_print(uint32_t num) {
-//     while (num--) {
-//         PORTD |= (1 << PD7);
-//         delay_us(1);
-//         PORTD &= ~(1 << PD7);
-//         delay_us(1);
-//     }
+// static void debug_print(uint32_t num)
+// {
+//   while (num--) {
+//     PORTD |= (1 << PD7);
+//     __asm__("nop\n\t");
+//     PORTD &= ~(1 << PD7);
+//     __asm__("nop\n\t");
+//   }
 // }
 
 void setup_timer_2(uint8_t count)
@@ -92,107 +76,45 @@ void thc_init()
   z_axis_steps_limit =
     (int32_t) settings.max_travel[Z_AXIS] * settings.steps_per_mm[Z_AXIS];
 
+  current_period = THC_PULSE_PERIOD_MAX;
+
+  thc_speed = 0;
+
   // Setup Timer2
   setup_timer_2(TIM2_LOAD_VAL);
 }
 
-void decrement_speed()
+bool check_step(int dir)
 {
-  if (thc_speed > -THC_SPEED_LIMIT) {
-    if (accel_counter++ >= accel_threshold) {
-      thc_speed--;
-      accel_counter = 0;
-    }
-  }
-}
-
-void increment_speed()
-{
-  if (thc_speed < THC_SPEED_LIMIT) {
-    if (accel_counter++ >= accel_threshold) {
-      thc_speed++;
-      accel_counter = 0;
-    }
-  }
-}
-
-void set_dir_up()
-{
-  if (settings.dir_invert_mask & (1 << Z_AXIS))
-    DIRECTION_PORT |= (1 << Z_DIRECTION_BIT);
-  else
-    DIRECTION_PORT &= ~(1 << Z_DIRECTION_BIT);
-}
-
-void set_dir_down()
-{
-  if (settings.dir_invert_mask & (1 << Z_AXIS))
-    DIRECTION_PORT &= ~(1 << Z_DIRECTION_BIT);
-  else {
-    DIRECTION_PORT |= (1 << Z_DIRECTION_BIT);
-  }
-}
-
-bool can_go(int dir) {
 #ifdef HOMING_FORCE_SET_ORIGIN
-  if (bit_istrue(settings.homing_dir_mask,bit(Z_AXIS))) {
-    if (sys_position[Z_AXIS] + dir <= -z_axis_steps_limit && new_pos >= 0)
+  if (bit_istrue(settings.homing_dir_mask, bit(Z_AXIS))) {
+    if (sys_position[Z_AXIS] + dir <= -z_axis_steps_limit && new_pos >= 0 &&
+        thc_pulse_counter >= current_period)
       return true;
   }
   else {
-    if (sys_position[Z_AXIS] + dir >= z_axis_steps_limit && new_pos <= 0) {
+    if (sys_position[Z_AXIS] + dir >= z_axis_steps_limit && new_pos <= 0 &&
+        thc_pulse_counter >= current_period) {
       return true;
     }
   }
-#else
-  if (sys_position[Z_AXIS] + dir >= z_axis_steps_limit && sys_position[Z_AXIS] + dir <= 0) {
-    return true;
-  }
-#endif
   return false;
+#else
+  return sys_position[Z_AXIS] + dir >= z_axis_steps_limit &&
+         sys_position[Z_AXIS] + dir <= 0 && thc_pulse_counter >= current_period;
+#endif
 }
 
 // If it is time to generate a step pulse, flip the step bit and updates the
 // machine position. It is assumed that the Z-axis range is [-Z, 0]
 void thc_step(int8_t heading)
 {
-  if (!can_go(heading)) {
-    return;
-  }
-  uint16_t current_period = speed_profile[abs(thc_speed)];
-  if (thc_pulse_counter >= current_period) {
-    thc_pulse_counter = thc_pulse_counter - current_period;
-    // Step
-    STEP_PORT |= (1 << Z_STEP_BIT);
-    delay_us(THC_PULSE_TIME_US);
-    STEP_PORT &= ~(1 << Z_STEP_BIT);
-    sys_position[Z_AXIS] += heading;
-  }
-}
-
-// Update speed, direction etc. Assumes that the current action is UP or STAY.
-// but the torch is still moving down due to ongoing deceleration.
-bool decelerating_ap()
-{
-  if (thc_speed < 0) {
-    increment_speed();
-    set_dir_down();
-    thc_step(WITHDRAW);
-    return true;
-  }
-  return false;
-}
-
-// Same as above, but opposite
-bool decelerating_wd()
-{
-  if (thc_speed > 0) {
-    decrement_speed();
-    set_dir_up();
-    thc_step(APPROACH);
-    return true;
-  }
-  return false;
+  // Step
+  thc_pulse_counter = thc_pulse_counter - current_period;
+  STEP_PORT |= (1 << Z_STEP_BIT);
+  delay_us(THC_PULSE_TIME_US);
+  STEP_PORT &= ~(1 << Z_STEP_BIT);
+  sys_position[Z_AXIS] += heading;
 }
 
 /* Timer 2 overflow interrupt subroutine
@@ -210,40 +132,125 @@ bool decelerating_wd()
  * there is an arc OK signal or when PGDOWN/PGUP is pressed in the control
  * software.
  *
- * The implementation looks pretty strange and the reason for that is mostly
- * because of space optimizations. The ISR takes about 11us on average.
+ * NOTE: TIMER2_OVF_vect has a higher priority than other timer interrupts on
+ * the AVR platform, so one has to be careful here, otherwise GRBL can break
  */
 ISR(TIMER2_OVF_vect)
 {
-  uint8_t start = TCNT2;
+  // grbl stepper interrupts worst case execution time is 25us, which leaves
+  // 7-8us up to its total period of 33us @ 30kHz. So to not break grbl, I aim
+  // to have less than 8us execution time for the non-interruptible part.
+  // ===========================================================================
+  // Un-interruptible part, approx 1.25us
+  // ===========================================================================
+  // Reload timer
+  setup_timer_2(TIM2_LOAD_VAL);
+  if (unlikely(thc_busy)) {
+    // Avoid nesting interrupts
+    return;
+  }
+  // ===========================================================================
+  // Interruptible part, approx 8.5us on average
+  // ===========================================================================
+  // I did some measurements with a 3us step pulse and the average time of the
+  // entire ISR was 9.75us. The worst case execution time seems to be around
+  // 16us, which can happen when acceleration, THC update AND a step pulse is
+  // generated all within the same ISR pass. This should give enough time for
+  // grbl to do its stuff.
+  //
+  // If this part of the code is interrupted for long enough, it may result in
+  // a missed step, but I think that's pretty unlikely. The "downtime" between
+  // ISR ticks is almost 3 full periods of grbls stepper interrupt, so we
+  // should be good.
+  // ===========================================================================
+  thc_busy = true;
+  sei();
   thc_ctrl_counter++;
   thc_pulse_counter++;
+  enum THC_Action action = STAY; // The action that will really be taken
+  int             accel  = thc_action;
+  switch (thc_action) {
+    case WITHDRAW: {
+      action = WITHDRAW + (((int) (thc_speed > 0)) << 1);
+    } break;
+    case APPROACH: {
+      action = APPROACH - (((int) (thc_speed < 0)) << 1);
+    } break;
+    case STAY: {
+      // Action stays STAY if thc_speed = 0
+      action -= (int) (thc_speed < 0); // action = withdraw
+      action += (int) (thc_speed > 0); // action = approach
+      accel = -action;
+    }
+  }
+
+  //  Set current speed
+  int new_speed = thc_speed + accel;
+  if (new_speed > -THC_SPEED_LIMIT && new_speed < THC_SPEED_LIMIT &&
+      accel_counter++ >= accel_threshold) {
+    thc_speed += accel;
+    accel_counter  = 0;
+    current_period = speed_profile[abs(thc_speed)];
+  }
+
+  switch (action) {
+    case WITHDRAW: {
+      if (likely(check_step(WITHDRAW))) {
+        if (settings.dir_invert_mask & (1 << Z_AXIS)) {
+          DIRECTION_PORT &= ~(1 << Z_DIRECTION_BIT);
+        }
+        else {
+          DIRECTION_PORT |= (1 << Z_DIRECTION_BIT);
+        }
+        thc_step(WITHDRAW);
+      }
+    } break;
+    case APPROACH: {
+      if (likely(check_step(APPROACH))) {
+        if (settings.dir_invert_mask & (1 << Z_AXIS)) {
+          DIRECTION_PORT |= (1 << Z_DIRECTION_BIT);
+        }
+        else {
+          DIRECTION_PORT &= ~(1 << Z_DIRECTION_BIT);
+        }
+        thc_step(APPROACH);
+      }
+    } break;
+    default:
+      thc_pulse_counter = 0; // Stay, don't generate pulses
+      break;
+  }
 
   if (thc_ctrl_counter >= THC_UPDATE_PERIOD_TICKS) {
     millis += THC_UPDATE_PERIOD_MS;
     thc_ctrl_counter = thc_ctrl_counter - THC_UPDATE_PERIOD_TICKS;
-    thc_update(); // Evaluate what the THC should be doing
-  }
-
-  if (jog_z_action == WITHDRAW) {
-    if (!decelerating_wd()) {
-      decrement_speed(); // accelerate down
-      set_dir_down();
-      thc_step(WITHDRAW);
+    // Using "likely" here to avoid penalties while machine is running
+    if (likely(machine_in_motion)) {
+      if (CONTROL_PIN & (1 << ARC_OK_BIT)) {
+        // The assumption is made that arc okay is a dry close from the plasma
+        // and the input pin is then pulled to ground.
+        // We don't have an arc_ok signal. Stay and update timestamp.
+        thc_action             = STAY;
+        arc_stablization_timer = millis;
+      }
+      else if (thc_adc_target > THC_ON_THRESHOLD &&
+               (millis - arc_stablization_timer) > ARC_STABILIZATION_TIME_MS) {
+        // Update THC
+        // We have an arc_ok signal, and THC is 'on'
+        // Wait 3 seconds for arc voltage to stabalize
+        if ((millis - arc_stablization_timer) > ARC_STABILIZATION_TIME_MS) {
+          if (thc_adc_value > thc_adc_target + THC_ALLOWED_ERROR) {
+            thc_action = WITHDRAW;
+          }
+          else if (thc_adc_value < thc_adc_target - THC_ALLOWED_ERROR) {
+            thc_action = APPROACH;
+          }
+          else {
+            thc_action = STAY;
+          }
+        }
+      }
     }
   }
-  else if (jog_z_action == APPROACH) {
-    if (!decelerating_ap()) {
-      increment_speed(); // accelerate up
-      set_dir_up();
-      thc_step(APPROACH);
-    }
-  }
-  // jog_z_action == STAY
-  else if (!decelerating_wd() && !decelerating_ap()) {
-    thc_pulse_counter = 0;
-  }
-  // Try to compensate for irq overhead by adding TCNT2
-  uint8_t load_val = min(TIM2_LOAD_VAL_MAX, (TCNT2 - start) + TIM2_LOAD_VAL);
-  setup_timer_2(load_val);
+  thc_busy = false;
 }

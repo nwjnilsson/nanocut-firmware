@@ -142,7 +142,7 @@ void spindle_stop()
     }
     printPgmString(PSTR("Offset has been cleared!\n"));
   }*/
-  jog_z_action = STAY;
+  thc_action = STAY;
   plan_sync_position(); //Update planner for THC offset!
 }
 
