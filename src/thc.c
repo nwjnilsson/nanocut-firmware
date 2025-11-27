@@ -150,14 +150,8 @@ ISR(TIMER2_OVF_vect)
     return;
   }
   // ===========================================================================
-  // Interruptible part, approx 8.5us on average
+  // Interruptible part
   // ===========================================================================
-  // I did some measurements with a 3us step pulse and the average time of the
-  // entire ISR was 9.75us. The worst case execution time seems to be around
-  // 16us, which can happen when acceleration, THC update AND a step pulse is
-  // generated all within the same ISR pass. This should give enough time for
-  // grbl to do its stuff.
-  //
   // If this part of the code is interrupted for long enough, it may result in
   // a missed step, but I think that's pretty unlikely. The "downtime" between
   // ISR ticks is almost 3 full periods of grbls stepper interrupt, so we
@@ -193,32 +187,19 @@ ISR(TIMER2_OVF_vect)
     current_period = speed_profile[abs(thc_speed)];
   }
 
-  switch (action) {
-    case WITHDRAW: {
-      if (likely(check_step(WITHDRAW))) {
-        if (settings.dir_invert_mask & (1 << Z_AXIS)) {
-          DIRECTION_PORT &= ~(1 << Z_DIRECTION_BIT);
-        }
-        else {
-          DIRECTION_PORT |= (1 << Z_DIRECTION_BIT);
-        }
-        thc_step(WITHDRAW);
-      }
-    } break;
-    case APPROACH: {
-      if (likely(check_step(APPROACH))) {
-        if (settings.dir_invert_mask & (1 << Z_AXIS)) {
-          DIRECTION_PORT |= (1 << Z_DIRECTION_BIT);
-        }
-        else {
-          DIRECTION_PORT &= ~(1 << Z_DIRECTION_BIT);
-        }
-        thc_step(APPROACH);
-      }
-    } break;
-    default:
-      thc_pulse_counter = 0; // Stay, don't generate pulses
-      break;
+  thc_pulse_counter *= abs(action); // if STAY, don't generate pulses
+  if (check_step(action)) {
+    if ((action < 0) ^ (0x1 & (settings.dir_invert_mask >> Z_AXIS))) {
+      DIRECTION_PORT |= (1 << Z_DIRECTION_BIT);
+    }
+    else {
+      DIRECTION_PORT &= ~(1 << Z_DIRECTION_BIT);
+    }
+    thc_pulse_counter = thc_pulse_counter - current_period;
+    STEP_PORT |= (1 << Z_STEP_BIT);
+    delay_us(THC_PULSE_TIME_US);
+    STEP_PORT &= ~(1 << Z_STEP_BIT);
+    sys_position[Z_AXIS] += action;
   }
 
   if (thc_ctrl_counter >= THC_UPDATE_PERIOD_TICKS) {
