@@ -144,7 +144,6 @@ ISR(TIMER2_OVF_vect)
   // Un-interruptible part, approx 1.25us
   // ===========================================================================
   // Reload timer
-  setup_timer_2(TIM2_LOAD_VAL);
   if (unlikely(thc_busy)) {
     // Avoid nesting interrupts
     return;
@@ -158,6 +157,7 @@ ISR(TIMER2_OVF_vect)
   // should be good.
   // ===========================================================================
   thc_busy = true;
+  setup_timer_2(TIM2_LOAD_VAL);
   sei();
   thc_ctrl_counter++;
   thc_pulse_counter++;
