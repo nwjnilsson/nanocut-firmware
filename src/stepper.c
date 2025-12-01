@@ -493,7 +493,9 @@ ISR(TIMER0_OVF_vect)
   // Reset stepping pins (leave the direction pins)
   // @addition J.N Reset was modified to only reset based on previous
   // step_outbits. Resetting the Z bit prematurely could interfere with THC.
-  STEP_PORT &= ~((STEP_PORT ^ step_port_invert_mask) & STEP_MASK);
+  const uint8_t step_port = STEP_PORT;
+  const uint8_t stepped = (step_port ^ step_port_invert_mask) & STEP_MASK; // the bits we just stepped
+  STEP_PORT = (step_port & ~stepped) | (stepped & step_port_invert_mask);
   #ifdef ENABLE_DUAL_AXIS
     STEP_PORT_DUAL = (STEP_PORT_DUAL & ~STEP_MASK_DUAL) | (step_port_invert_mask_dual & STEP_MASK_DUAL);
   #endif
