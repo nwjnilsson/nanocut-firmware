@@ -33,8 +33,6 @@ static uint16_t      thc_pulse_counter = 0;
 static uint16_t      thc_ctrl_counter  = 0;
 static volatile bool thc_busy          = false;
 
-enum ArcStatus { ARC_NOT_OK, ARC_OK = 1 << ARC_OK_BIT };
-
 // static void debug_print(uint32_t num)
 // {
 //   while (num--) {
