@@ -4,7 +4,7 @@
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
 // Pulse period / acceleration related
-#define SPEED_PROFILE_RESOLUTION 100 // Can be reduced to save memory
+#define SPEED_PROFILE_RESOLUTION 50
 #define THC_UPDATE_PERIOD_TICKS 50
 #define THC_UPDATE_PERIOD_MS 5
 #define TIM2_LOAD_VAL 208
@@ -21,17 +21,17 @@ volatile uint16_t thc_adc_target = 0;
 
 // Internal
 static uint32_t arc_stablization_timer = 0;
-static uint16_t thc_pulse_counter      = 0;
-static uint16_t thc_ctrl_counter       = 0;
 static uint16_t current_period         = 0;
 static int32_t  z_axis_steps_limit;
 // Array of pulse periods, slowest at index 0
 static uint16_t speed_profile[SPEED_PROFILE_RESOLUTION];
 // used to index the speed profile, sign indicates direction
-static int16_t  thc_speed = 0;
-static uint16_t accel_threshold;
-static uint16_t accel_counter = 0;
-static bool     thc_busy      = false;
+static int16_t       thc_speed = 0;
+static uint16_t      accel_threshold;
+static uint16_t      accel_counter     = 0;
+static uint16_t      thc_pulse_counter = 0;
+static uint16_t      thc_ctrl_counter  = 0;
+static volatile bool thc_busy          = false;
 
 enum ArcStatus { ARC_NOT_OK, ARC_OK = 1 << ARC_OK_BIT };
 
@@ -61,16 +61,16 @@ void thc_init()
   // Speed profile calculation
   float speed_step = settings.max_rate[Z_AXIS] / SPEED_PROFILE_RESOLUTION;
   speed_profile[0] = THC_PULSE_PERIOD_MAX;
-  for (int16_t i = 0; i < SPEED_PROFILE_RESOLUTION; ++i) {
-    speed_profile[i] =
-      min(THC_PULSE_PERIOD_MAX,
-          ceil((ISR_TICKS_PER_MINUTE) /
-               ((i + 1) * speed_step * settings.steps_per_mm[Z_AXIS])));
+  for (int16_t i = 1; i < SPEED_PROFILE_RESOLUTION; ++i) {
+    speed_profile[i] = min(
+      THC_PULSE_PERIOD_MAX,
+      (uint16_t) ceil((ISR_TICKS_PER_MINUTE) /
+                      ((i + 1) * speed_step * settings.steps_per_mm[Z_AXIS])));
   }
 
   // After this many ISR ticks, we can increase/decrease the speed
-  accel_threshold =
-    ceil(speed_step * ISR_TICKS_PER_MINUTE / settings.acceleration[Z_AXIS]);
+  accel_threshold = (uint16_t) ceil(speed_step * ISR_TICKS_PER_MINUTE /
+                                    settings.acceleration[Z_AXIS]);
 
   // The assumption is made that max_travel is positive
   z_axis_steps_limit =
@@ -86,35 +86,20 @@ void thc_init()
 
 bool check_step(int dir)
 {
+  int32_t current_pos = sys_position[Z_AXIS];
 #ifdef HOMING_FORCE_SET_ORIGIN
   if (bit_istrue(settings.homing_dir_mask, bit(Z_AXIS))) {
-    if (sys_position[Z_AXIS] + dir <= -z_axis_steps_limit && new_pos >= 0 &&
-        thc_pulse_counter >= current_period)
-      return true;
+    return (current_pos + dir <= -z_axis_steps_limit) &&
+           (current_pos + dir >= 0);
   }
   else {
-    if (sys_position[Z_AXIS] + dir >= z_axis_steps_limit && new_pos <= 0 &&
-        thc_pulse_counter >= current_period) {
-      return true;
-    }
+    return (current_pos + dir >= z_axis_steps_limit) &&
+           (current_pos + dir <= 0);
   }
   return false;
 #else
-  return sys_position[Z_AXIS] + dir >= z_axis_steps_limit &&
-         sys_position[Z_AXIS] + dir <= 0 && thc_pulse_counter >= current_period;
+  return (current_pos + dir >= z_axis_steps_limit) && (current_pos + dir <= 0);
 #endif
-}
-
-// If it is time to generate a step pulse, flip the step bit and updates the
-// machine position. It is assumed that the Z-axis range is [-Z, 0]
-void thc_step(int8_t heading)
-{
-  // Step
-  thc_pulse_counter = thc_pulse_counter - current_period;
-  STEP_PORT |= (1 << Z_STEP_BIT);
-  delay_us(THC_PULSE_TIME_US);
-  STEP_PORT &= ~(1 << Z_STEP_BIT);
-  sys_position[Z_AXIS] += heading;
 }
 
 /* Timer 2 overflow interrupt subroutine
@@ -143,7 +128,6 @@ ISR(TIMER2_OVF_vect)
   // ===========================================================================
   // Un-interruptible part, approx 1.25us
   // ===========================================================================
-  // Reload timer
   if (unlikely(thc_busy)) {
     // Avoid nesting interrupts
     return;
@@ -158,53 +142,59 @@ ISR(TIMER2_OVF_vect)
   // ===========================================================================
   thc_busy = true;
   setup_timer_2(TIM2_LOAD_VAL);
-  sei();
   thc_ctrl_counter++;
   thc_pulse_counter++;
-  enum THC_Action action = STAY; // The action that will really be taken
-  int             accel  = thc_action;
+  accel_counter++;
+  sei();
+  int16_t action = STAY; // The action that will really be taken
+  int16_t accel  = thc_action;
   switch (thc_action) {
     case WITHDRAW: {
-      action = WITHDRAW + (((int) (thc_speed > 0)) << 1);
+      action = WITHDRAW + (((int16_t) (thc_speed > 0)) << 1);
     } break;
     case APPROACH: {
-      action = APPROACH - (((int) (thc_speed < 0)) << 1);
+      action = APPROACH - (((int16_t) (thc_speed < 0)) << 1);
     } break;
     case STAY: {
       // Action stays STAY if thc_speed = 0
-      action -= (int) (thc_speed < 0); // action = withdraw
-      action += (int) (thc_speed > 0); // action = approach
+      action -= (int16_t) (thc_speed < 0); // action = withdraw
+      action += (int16_t) (thc_speed > 0); // action = approach
       accel = -action;
     }
   }
+  thc_pulse_counter *= abs(action); // disable pulses if STAY
 
   //  Set current speed
-  int new_speed = thc_speed + accel;
-  if (new_speed > -THC_SPEED_LIMIT && new_speed < THC_SPEED_LIMIT &&
-      accel_counter++ >= accel_threshold) {
-    thc_speed += accel;
-    accel_counter  = 0;
-    current_period = speed_profile[abs(thc_speed)];
+  int16_t new_speed = thc_speed + accel;
+  if (accel_counter >= accel_threshold) {
+    accel_counter -= accel_threshold;
+    if (new_speed > -THC_SPEED_LIMIT && new_speed < THC_SPEED_LIMIT) {
+      thc_speed      = new_speed;
+      current_period = speed_profile[abs(thc_speed)];
+    }
   }
 
-  thc_pulse_counter *= abs(action); // if STAY, don't generate pulses
-  if (check_step(action)) {
-    if ((action < 0) ^ (0x1 & (settings.dir_invert_mask >> Z_AXIS))) {
-      DIRECTION_PORT |= (1 << Z_DIRECTION_BIT);
+  if (thc_pulse_counter >= current_period) {
+    thc_pulse_counter -= current_period;
+    if (check_step(action)) {
+      if ((action < 0) ^ (0x1 & (settings.dir_invert_mask >> Z_AXIS))) {
+        DIRECTION_PORT |= (1 << Z_DIRECTION_BIT);
+      }
+      else {
+        DIRECTION_PORT &= ~(1 << Z_DIRECTION_BIT);
+      }
+      STEP_PORT |= (1 << Z_STEP_BIT);
+      delay_us(THC_PULSE_TIME_US);
+      STEP_PORT &= ~(1 << Z_STEP_BIT);
+      cli();
+      sys_position[Z_AXIS] += action;
+      sei();
     }
-    else {
-      DIRECTION_PORT &= ~(1 << Z_DIRECTION_BIT);
-    }
-    thc_pulse_counter = thc_pulse_counter - current_period;
-    STEP_PORT |= (1 << Z_STEP_BIT);
-    delay_us(THC_PULSE_TIME_US);
-    STEP_PORT &= ~(1 << Z_STEP_BIT);
-    sys_position[Z_AXIS] += action;
   }
 
   if (thc_ctrl_counter >= THC_UPDATE_PERIOD_TICKS) {
-    millis += THC_UPDATE_PERIOD_MS;
     thc_ctrl_counter = thc_ctrl_counter - THC_UPDATE_PERIOD_TICKS;
+    millis += THC_UPDATE_PERIOD_MS;
     // Using "likely" here to avoid penalties while machine is running
     if (likely(machine_in_motion)) {
       if (CONTROL_PIN & (1 << ARC_OK_BIT)) {
