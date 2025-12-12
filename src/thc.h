@@ -1,5 +1,6 @@
 #ifndef thc_h
 #define thc_h
+#include "grbl.h"
 /**
  * This file contains some defines that one may want to tune depending on your
  * setup
@@ -21,14 +22,11 @@
 // for hardcoding this value here.
 #define ARC_STABILIZATION_TIME_MS 3000
 
-// The threshold for when the THC is considered on. The target value is set in
-// the control software. The target value is in the range [0-1024]
-// ('ADC ticks'), which is mapped to the real voltage (0-5V on the analog
-// input).
-#define THC_ON_THRESHOLD 150
+// The threshold for when the THC is considered on and active. Volts.
+#define THC_ON_THRESHOLD_V 90.0
 
-// The allowed diff between the target value and the actual value (in ADC ticks)
-#define THC_ALLOWED_ERROR 10
+// The allowed diff between the target value and the actual value. Volts.
+#define THC_ALLOWED_ERROR_V 0.25
 
 // -----------------------------------------------------------------------------
 // Don't touch this part
@@ -38,7 +36,9 @@
 // Action in terms of movement relative to origin. "Approach" means moving to
 // origin/home.
 enum THC_Action { WITHDRAW = -1, STAY = 0, APPROACH = 1 };
-void thc_init();
-void thc_update();
+void  thc_init();
+void  thc_update();
+bool thc_set_voltage_target(float input);
+float thc_get_voltage();
 
 #endif // thc_h

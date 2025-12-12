@@ -98,7 +98,7 @@ typedef struct {
   uint8_t stepper_idle_lock_time; // If max value 255, steppers do not disable.
   uint8_t status_report_mask; // Mask to indicate desired report data.
   float junction_deviation;
-  float arc_tolerance;
+  float arc_tolerance; // the arc move gcode, not THC related
 
   float rpm_max;
   float rpm_min;
@@ -110,6 +110,9 @@ typedef struct {
   float homing_seek_rate;
   uint16_t homing_debounce_delay;
   float homing_pulloff;
+
+  float arc_voltage_divider;
+
 } settings_t;
 extern settings_t settings;
 

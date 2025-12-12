@@ -509,8 +509,8 @@ void report_realtime_status()
 
   printPgmString(PSTR(" }, \"FEED\": "));
   printFloat_RateValue(st_get_realtime_rate());
-  printPgmString(PSTR(", \"ADC\": "));
-  print_uint32_base10((uint16_t)thc_adc_value);
+  printPgmString(PSTR(", \"V\": "));
+  printFloat(thc_get_voltage(), 4);
   printPgmString(PSTR(", \"IN_MOTION\": "));
   if (machine_in_motion == true)
   {

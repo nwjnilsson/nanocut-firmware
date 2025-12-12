@@ -17,7 +17,17 @@
 volatile uint32_t millis         = 0;
 volatile int      thc_action     = STAY;
 volatile uint16_t thc_adc_value  = 0;
-volatile uint16_t thc_adc_target = 0;
+static uint16_t   thc_adc_target = 0;
+
+// ADC filtering (exponential moving average)
+static uint32_t thc_adc_accumulator = 0;
+// Filter constant: higher = slower filter. 3 gives us ~63% response in
+// 2^3=8 samples, which is ~0.8 ms @ 10 kHz
+#define ADC_FILTER_ALPHA 3
+
+static uint16_t thc_on_threshold   = 0; // in adc ticks
+static int      thc_allowed_error  = 0; // in adc ticks
+static float    thc_adc_multiplier = 0.f;
 
 // Internal
 static uint32_t arc_stablization_timer = 0;
@@ -33,6 +43,7 @@ static uint16_t      thc_pulse_counter = 0;
 static uint16_t      thc_ctrl_counter  = 0;
 static volatile bool thc_busy          = false;
 
+static void setup_timer_2(uint8_t val);
 // static void debug_print(uint32_t num)
 // {
 //   while (num--) {
@@ -43,19 +54,12 @@ static volatile bool thc_busy          = false;
 //   }
 // }
 
-void setup_timer_2(uint8_t count)
-{
-  TCCR2B = 0x00;  // Disable Timer2 while we set it up
-  TCNT2  = count; // Reset Timer Count
-  TIFR2  = 0x00;  // Timer2 INT Flag Reg: Clear Timer Overflow Flag
-  TIMSK2 = 0x01;  // Timer2 INT Reg: Timer2 Overflow Interrupt Enable
-  TCCR2A = 0x00;  // Timer2 Control Reg A: Wave Gen Mode normal
-  TCCR2B = (1 << CS21) | (1 << CS20); // Prescaler 32
-}
-
 // Runs every time settings are written to the Z-axis as well as on startup
 void thc_init()
 {
+  thc_adc_multiplier = 1024.f / (5.f * settings.arc_voltage_divider);
+  // Initialize filter accumulator to prevent startup transient
+  thc_adc_accumulator = ((uint32_t) thc_adc_value) << (8 + ADC_FILTER_ALPHA);
   // Speed profile calculation
   float speed_step = settings.max_rate[Z_AXIS] / SPEED_PROFILE_RESOLUTION;
   speed_profile[0] = THC_PULSE_PERIOD_MAX;
@@ -69,20 +73,82 @@ void thc_init()
   // After this many ISR ticks, we can increase/decrease the speed
   accel_threshold = (uint16_t) ceil(speed_step * ISR_TICKS_PER_MINUTE /
                                     settings.acceleration[Z_AXIS]);
-
   // The assumption is made that max_travel is positive
   z_axis_steps_limit =
     (int32_t) settings.max_travel[Z_AXIS] * settings.steps_per_mm[Z_AXIS];
-
   current_period = THC_PULSE_PERIOD_MAX;
+  thc_speed      = 0;
 
-  thc_speed = 0;
+  // clear ADLAR in ADMUX (0x7C) to right-adjust the result
+  // ADCL will contain lower 8 bits, ADCH upper 2 (in last two bits)
+  ADMUX &= 0b11011111;
+  // Set REFS1..0 in ADMUX (0x7C) to change reference voltage to the
+  // proper source (01)
+  ADMUX |= 0b01000000;
+  // Clear MUX3..0 in ADMUX (0x7C) in preparation for setting the analog
+  // input
+  ADMUX &= 0b11110000;
+  // Set MUX3..0 in ADMUX (0x7C) to read from AD8 (Internal temp)
+  // Do not set above 15! You will overrun other parts of ADMUX. A full
+  // list of possible inputs is available in Table 24-4 of the ATMega328
+  // datasheet
+  ADMUX |= 8;
+  // ADMUX |= B00001000; // Binary equivalent
+  // Set ADEN in ADCSRA (0x7A) to enable the ADC.
+  // Note, this instruction takes 12 ADC clocks to execute
+  ADCSRA |= 0b10000000;
+  // Set ADATE in ADCSRA (0x7A) to enable auto-triggering.
+  ADCSRA |= 0b00100000;
+  // Clear ADTS2..0 in ADCSRB (0x7B) to set trigger mode to free running.
+  // This means that as soon as an ADC has finished, the next will be
+  // immediately started.
+  ADCSRB &= 0b11111000;
+  // Set the Prescaler to 128 (16000KHz/128 = 125KHz)
+  // Above 200KHz 10-bit results are not reliable.
+  ADCSRA |= 0b00000111;
+  // Set ADIE in ADCSRA (0x7A) to enable the ADC interrupt.
+  // Without this, the internal interrupt will not trigger.
+  ADCSRA |= 0b00001000;
+  // Set ADSC in ADCSRA (0x7A) to start the ADC conversion
+  ADCSRA |= 0b01000000;
+  DDRC &= ~(1 << ARC_OK_BIT); // Set arc ok as input for Arc Ok
+  PORTC |= (1 << ARC_OK_BIT); // Set arc ok internally pulled-up
+
+  // Start first ADC conversion
+  ADMUX = (ADMUX & 0xF0) | (CONTROL_ARC_VOLTAGE_PIN_BIT & 0x0F);
+  ADCSRA |= (1 << ADSC);
 
   // Setup Timer2
   setup_timer_2(TIM2_LOAD_VAL);
 }
 
-bool check_step(int dir)
+float thc_get_voltage() { return ((float) thc_adc_value / thc_adc_multiplier); }
+
+// Sets the target THC voltage from e.g $T=112.5
+bool thc_set_voltage_target(float ftarget)
+{
+  int itarget = roundf(ftarget * thc_adc_multiplier);
+  // If target is outside of 10 bit ADC range, return false so error can
+  // be raised
+  if (itarget < 0 || itarget > 1023) {
+    return false;
+  }
+  thc_adc_target = (uint16_t) itarget;
+  return true;
+}
+
+// Reloads the timer for overflow interrupts
+static void setup_timer_2(uint8_t count)
+{
+  TCCR2B = 0x00;  // Disable Timer2 while we set it up
+  TCNT2  = count; // Reset Timer Count
+  TIFR2  = 0x00;  // Timer2 INT Flag Reg: Clear Timer Overflow Flag
+  TIMSK2 = 0x01;  // Timer2 INT Reg: Timer2 Overflow Interrupt Enable
+  TCCR2A = 0x00;  // Timer2 Control Reg A: Wave Gen Mode normal
+  TCCR2B = (1 << CS21) | (1 << CS20); // Prescaler 32
+}
+
+static bool check_step(int dir)
 {
   int32_t current_pos = sys_position[Z_AXIS];
 #ifdef HOMING_FORCE_SET_ORIGIN
@@ -98,6 +164,25 @@ bool check_step(int dir)
 #else
   return (current_pos + dir >= z_axis_steps_limit) && (current_pos + dir <= 0);
 #endif
+}
+
+/* ADC interrupt
+ *
+ * Exponential moving average filter: y[n] = y[n-1] + α(x[n] - y[n-1])
+ * Using fixed-point arithmetic with α = 1/2^ADC_FILTER_ALPHA
+ */
+ISR(ADC_vect)
+{
+  // Must read low first
+  uint16_t raw_adc = ADCL | (ADCH << 8);
+
+  thc_adc_accumulator += ((uint32_t) raw_adc << 8) - thc_adc_accumulator;
+  thc_adc_accumulator >>= ADC_FILTER_ALPHA;
+  thc_adc_value = (uint16_t) (thc_adc_accumulator >> 8);
+
+  // Not needed because free-running mode is enabled.
+  // Set ADSC in ADCSRA (0x7A) to start another ADC conversion
+  // ADCSRA |= B01000000;
 }
 
 /* Timer 2 overflow interrupt subroutine
@@ -202,16 +287,16 @@ ISR(TIMER2_OVF_vect)
         thc_action             = STAY;
         arc_stablization_timer = millis;
       }
-      else if (thc_adc_target > THC_ON_THRESHOLD &&
+      else if (thc_adc_target > thc_on_threshold &&
                (millis - arc_stablization_timer) > ARC_STABILIZATION_TIME_MS) {
         // Update THC
         // We have an arc_ok signal, and THC is 'on'
         // Wait 3 seconds for arc voltage to stabalize
         if ((millis - arc_stablization_timer) > ARC_STABILIZATION_TIME_MS) {
-          if (thc_adc_value > thc_adc_target + THC_ALLOWED_ERROR) {
+          if (thc_adc_value > thc_adc_target + thc_allowed_error) {
             thc_action = WITHDRAW;
           }
-          else if (thc_adc_value < thc_adc_target - THC_ALLOWED_ERROR) {
+          else if (thc_adc_value < thc_adc_target - thc_allowed_error) {
             thc_action = APPROACH;
           }
           else {

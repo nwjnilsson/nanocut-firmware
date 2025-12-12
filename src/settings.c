@@ -57,7 +57,9 @@ const __flash settings_t defaults = {\
     .acceleration[Z_AXIS] = DEFAULT_Z_ACCELERATION,
     .max_travel[X_AXIS] = (-DEFAULT_X_MAX_TRAVEL),
     .max_travel[Y_AXIS] = (-DEFAULT_Y_MAX_TRAVEL),
-    .max_travel[Z_AXIS] = (-DEFAULT_Z_MAX_TRAVEL)};
+    .max_travel[Z_AXIS] = (-DEFAULT_Z_MAX_TRAVEL),
+    .arc_voltage_divider = DEFAULT_ARC_VOLTAGE_DIVIDER
+};
 
 
 // Method to store startup lines into EEPROM
@@ -297,6 +299,7 @@ uint8_t settings_store_global_setting(uint8_t parameter, float value) {
           return(STATUS_SETTING_DISABLED_LASER);
         #endif
         break;
+      case 33: settings.arc_voltage_divider = value; thc_init(); break; // Re-init to pre-compute compare value
       default:
         return(STATUS_INVALID_STATEMENT);
     }

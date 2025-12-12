@@ -66,8 +66,6 @@
 extern volatile int thc_action;
 extern volatile bool machine_in_motion;
 extern volatile uint32_t millis;
-extern volatile uint16_t thc_adc_value;
-extern volatile uint16_t thc_adc_target;
 
 #define bit_get(p,m) ((p) & (m))
 #define bit_set(p,m) ((p) |= (m))

@@ -36,66 +36,8 @@ volatile uint8_t sys_rt_exec_accessory_override; // Global realtime executor bit
 #endif
 
 
-ISR(ADC_vect){
-  // Must read low first
-  thc_adc_value = ADCL | (ADCH << 8);
-  // Not needed because free-running mode is enabled.
-  // Set ADSC in ADCSRA (0x7A) to start another ADC conversion
-  // ADCSRA |= B01000000;
-}
-
-
 int main(void)
 {
-
-  /* Begin ADC Setup */
-  // clear ADLAR in ADMUX (0x7C) to right-adjust the result
-  // ADCL will contain lower 8 bits, ADCH upper 2 (in last two bits)
-  ADMUX &= 0b11011111;
-  // Set REFS1..0 in ADMUX (0x7C) to change reference voltage to the
-  // proper source (01)
-  ADMUX |= 0b01000000;
-  // Clear MUX3..0 in ADMUX (0x7C) in preparation for setting the analog
-  // input
-  ADMUX &= 0b11110000;
-  // Set MUX3..0 in ADMUX (0x7C) to read from AD8 (Internal temp)
-  // Do not set above 15! You will overrun other parts of ADMUX. A full
-  // list of possible inputs is available in Table 24-4 of the ATMega328
-  // datasheet
-  ADMUX |= 8;
-  // ADMUX |= B00001000; // Binary equivalent
-  // Set ADEN in ADCSRA (0x7A) to enable the ADC.
-  // Note, this instruction takes 12 ADC clocks to execute
-  ADCSRA |= 0b10000000;
-  // Set ADATE in ADCSRA (0x7A) to enable auto-triggering.
-  ADCSRA |= 0b00100000;
-  // Clear ADTS2..0 in ADCSRB (0x7B) to set trigger mode to free running.
-  // This means that as soon as an ADC has finished, the next will be
-  // immediately started.
-  ADCSRB &= 0b11111000;
-  // Set the Prescaler to 128 (16000KHz/128 = 125KHz)
-  // Above 200KHz 10-bit results are not reliable.
-  ADCSRA |= 0b00000111;
-  // Set ADIE in ADCSRA (0x7A) to enable the ADC interrupt.
-  // Without this, the internal interrupt will not trigger.
-  ADCSRA |= 0b00001000;
-  // Enable global interrupts
-  // AVR macro included in <avr/interrupts.h>, which the Arduino IDE
-  // supplies by default.
-  sei();
-  // Set ADSC in ADCSRA (0x7A) to start the ADC conversion
-  ADCSRA |=0b01000000;
-  /* End ADC Setup */
-
-
-
-  DDRC &= ~(1<<CONTROL_FEED_HOLD_BIT); // Set arc ok as input for Arc Ok
-  PORTC |= (1<<CONTROL_FEED_HOLD_BIT);  // Set arc ok internally pulled-up
-
-  //Start first ADC conversion
-  ADMUX = (ADMUX & 0xF0) | (CONTROL_ARC_VOLTAGE_PIN_BIT & 0x0F);
-  ADCSRA |= (1<<ADSC);
-
   // Initialize system upon power-up.
   serial_init();   // Setup serial baud rate and interrupts
   settings_init(); // Load Grbl settings from EEPROM
