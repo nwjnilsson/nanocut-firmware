@@ -174,9 +174,17 @@ static bool check_step(int dir)
 ISR(ADC_vect)
 {
   // Must read low first
-  uint16_t raw_adc = ADCL | (ADCH << 8); // 10 bits
-  int32_t  target  = (int32_t) raw_adc << 8;
-  thc_adc_accumulator += (target - thc_adc_accumulator) >> ADC_FILTER_ALPHA;
+  uint16_t raw_adc = ADCL | (ADCH << 8);
+  int32_t  target  = (int32_t) raw_adc << 8; // Q8
+  int32_t  delta   = target - thc_adc_accumulator;
+  // Symmetric rounding before shift
+  if (delta >= 0) {
+    delta += (1 << (ADC_FILTER_ALPHA - 1));
+  }
+  else {
+    delta -= (1 << (ADC_FILTER_ALPHA - 1));
+  }
+  thc_adc_accumulator += delta >> ADC_FILTER_ALPHA;
   thc_adc_value = (uint16_t) (thc_adc_accumulator >> 8);
   // Not needed because free-running mode is enabled.
   // Set ADSC in ADCSRA (0x7A) to start another ADC conversion
