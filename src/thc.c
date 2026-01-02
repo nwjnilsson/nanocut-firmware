@@ -21,9 +21,9 @@ static uint16_t   thc_adc_target = 0;
 
 // ADC filtering (exponential moving average)
 static volatile int32_t thc_adc_accumulator = 0;
-// Filter constant: higher = slower filter. 3 gives us ~63% response in
-// 2^3=8 samples, which is ~0.8 ms @ 10 kHz
-#define ADC_FILTER_ALPHA 3
+// Filter constant: higher = slower filter. 7 gives us ~63% response in
+// 2^7=128 samples, which is ~12 ms @ 10 kHz
+#define ADC_FILTER_ALPHA 7
 
 static uint16_t thc_on_threshold   = 0; // in adc ticks
 static int      thc_allowed_error  = 0; // in adc ticks
