@@ -19,11 +19,15 @@ volatile int      thc_action     = STAY;
 volatile uint16_t thc_adc_value  = 0;
 static uint16_t   thc_adc_target = 0;
 
-// ADC filtering (exponential moving average)
-static volatile int32_t thc_adc_accumulator = 0;
-// Filter constant: higher = slower filter. 7 gives us ~63% response in
-// 2^7=128 samples, which is ~12 ms @ 10 kHz
-#define ADC_FILTER_ALPHA 7
+// ADC filtering: decimate 16:1 (~600 Hz), then 7-sample centered moving
+// average. Group delay is constant at 3 decimated samples (5 ms). No tails.
+#define DECIMATE_N 16
+#define MA_N 7
+static uint16_t adc_decimate_sum   = 0;
+static uint8_t  adc_decimate_count = 0;
+static uint16_t adc_ma_buf[MA_N];
+static uint8_t  adc_ma_head = 0;
+static uint16_t adc_ma_sum  = 0;
 
 static uint16_t thc_on_threshold   = 0; // in adc ticks
 static int      thc_allowed_error  = 0; // in adc ticks
@@ -58,8 +62,13 @@ static void setup_timer_2(uint8_t val);
 void thc_init()
 {
   thc_adc_multiplier = 1024.f / (5.f * settings.arc_voltage_divider);
-  // Initialize filter accumulator to prevent startup transient
-  thc_adc_accumulator = 0;
+  // Initialize filter state
+  adc_decimate_sum   = 0;
+  adc_decimate_count = 0;
+  adc_ma_head        = 0;
+  adc_ma_sum         = 0;
+  for (uint8_t i = 0; i < MA_N; i++)
+    adc_ma_buf[i] = 0;
   // Speed profile calculation
   float speed_step = settings.max_rate[Z_AXIS] / SPEED_PROFILE_RESOLUTION;
   speed_profile[0] = THC_PULSE_PERIOD_MAX;
@@ -168,27 +177,25 @@ static bool check_step(int dir)
 
 /* ADC interrupt
  *
- * Exponential moving average filter: y[n] = y[n-1] + α(x[n] - y[n-1])
- * Using fixed-point arithmetic with α = 1/2^ADC_FILTER_ALPHA
+ * Decimates 16:1 by summing raw samples, then feeds the average into a
+ * 7-sample moving average ring buffer. Output rate ~600 Hz, group delay
+ * is a constant 3 decimated samples (~5 ms). True symmetric FIR — no tails.
  */
 ISR(ADC_vect)
 {
   // Must read low first
   uint16_t raw_adc = ADCL | (ADCH << 8);
-  int32_t  target  = (int32_t) raw_adc << 8; // Q8
-  int32_t  delta   = target - thc_adc_accumulator;
-  // Symmetric rounding before shift
-  if (delta >= 0) {
-    delta += (1 << (ADC_FILTER_ALPHA - 1));
+  adc_decimate_sum += raw_adc;
+  if (++adc_decimate_count >= DECIMATE_N) {
+    adc_decimate_count = 0;
+    uint16_t decimated = adc_decimate_sum >> 4; // divide by 16
+    adc_decimate_sum   = 0;
+    adc_ma_sum -= adc_ma_buf[adc_ma_head];
+    adc_ma_buf[adc_ma_head] = decimated;
+    adc_ma_sum += decimated;
+    adc_ma_head   = (adc_ma_head + 1 == MA_N) ? 0 : adc_ma_head + 1;
+    thc_adc_value = adc_ma_sum / MA_N;
   }
-  else {
-    delta -= (1 << (ADC_FILTER_ALPHA - 1));
-  }
-  thc_adc_accumulator += delta >> ADC_FILTER_ALPHA;
-  thc_adc_value = (uint16_t) (thc_adc_accumulator >> 8);
-  // Not needed because free-running mode is enabled.
-  // Set ADSC in ADCSRA (0x7A) to start another ADC conversion
-  // ADCSRA |= B01000000;
 }
 
 /* Timer 2 overflow interrupt subroutine
