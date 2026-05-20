@@ -30,7 +30,7 @@ static uint8_t  adc_ma_head = 0;
 static uint16_t adc_ma_sum  = 0;
 
 static uint16_t thc_on_threshold   = 0; // in adc ticks
-static int      thc_allowed_error  = 0; // in adc ticks
+static uint16_t thc_allowed_error  = 0; // in adc ticks
 static float    thc_adc_multiplier = 0.f;
 
 // Internal
@@ -62,6 +62,10 @@ static void setup_timer_2(uint8_t val);
 void thc_init()
 {
   thc_adc_multiplier = 1024.f / (5.f * settings.arc_voltage_divider);
+  thc_on_threshold =
+    max(1u, (uint16_t) roundf(THC_ON_THRESHOLD_V * thc_adc_multiplier));
+  thc_allowed_error =
+    max(1u, (uint16_t) roundf(THC_ALLOWED_ERROR_V * thc_adc_multiplier));
   // Initialize filter state
   adc_decimate_sum   = 0;
   adc_decimate_count = 0;
@@ -241,6 +245,7 @@ ISR(TIMER2_OVF_vect)
   thc_ctrl_counter++;
   thc_pulse_counter++;
   accel_counter++;
+  const uint16_t thc_adc_value_safe = thc_adc_value;
   sei();
   int16_t action = STAY; // The action that will really be taken
   int16_t accel  = thc_action;
@@ -306,10 +311,10 @@ ISR(TIMER2_OVF_vect)
         // We have an arc_ok signal, and THC is 'on'
         // Wait 3 seconds for arc voltage to stabalize
         if ((millis - arc_stablization_timer) > ARC_STABILIZATION_TIME_MS) {
-          if (thc_adc_value > thc_adc_target + thc_allowed_error) {
+          if (thc_adc_value_safe > thc_adc_target + thc_allowed_error) {
             thc_action = WITHDRAW;
           }
-          else if (thc_adc_value < thc_adc_target - thc_allowed_error) {
+          else if (thc_adc_value_safe < thc_adc_target - thc_allowed_error) {
             thc_action = APPROACH;
           }
           else {

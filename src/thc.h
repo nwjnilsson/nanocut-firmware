@@ -23,10 +23,10 @@
 #define ARC_STABILIZATION_TIME_MS 3000
 
 // The threshold for when the THC is considered on and active. Volts.
-#define THC_ON_THRESHOLD_V 90.0
+#define THC_ON_THRESHOLD_V 25.0
 
 // The allowed diff between the target value and the actual value. Volts.
-#define THC_ALLOWED_ERROR_V 0.25
+#define THC_ALLOWED_ERROR_V 1.75
 
 // -----------------------------------------------------------------------------
 // Don't touch this part
@@ -38,7 +38,7 @@
 enum THC_Action { WITHDRAW = -1, STAY = 0, APPROACH = 1 };
 void  thc_init();
 void  thc_update();
-bool thc_set_voltage_target(float input);
+bool  thc_set_voltage_target(float input);
 float thc_get_voltage();
 
 #endif // thc_h
