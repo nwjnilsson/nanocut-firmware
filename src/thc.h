@@ -28,6 +28,17 @@
 // The allowed diff between the target value and the actual value. Volts.
 #define THC_ALLOWED_ERROR_V 1.75
 
+// Freeze THC when the real feed rate falls below this percent of the planned
+// block speed. This prevents corner/slowdown dives.
+#define THC_FEED_LOCKOUT_PERCENT 85
+
+// Hold off over-voltage correction for a short time after a fast positive
+// voltage step, which typically indicates crossing a void or slat.
+#define THC_ANTIDIVE_HOLD_MS 100
+
+// Positive ADC step threshold in multiples of thc_allowed_error.
+#define THC_ANTIDIVE_DV_MULTIPLIER 2
+
 // -----------------------------------------------------------------------------
 // Don't touch this part
 // -----------------------------------------------------------------------------

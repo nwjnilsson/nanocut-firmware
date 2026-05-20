@@ -32,6 +32,8 @@ static uint16_t adc_ma_sum  = 0;
 static uint16_t thc_on_threshold   = 0; // in adc ticks
 static uint16_t thc_allowed_error  = 0; // in adc ticks
 static float    thc_adc_multiplier = 0.f;
+static uint8_t   thc_antidive_hold_ticks;
+static uint16_t  thc_prev_adc_value;
 
 // Internal
 static uint32_t arc_stablization_timer = 0;
@@ -73,6 +75,8 @@ void thc_init()
   adc_ma_sum         = 0;
   for (uint8_t i = 0; i < MA_N; i++)
     adc_ma_buf[i] = 0;
+  thc_antidive_hold_ticks = 0;
+  thc_prev_adc_value      = 0;
   // Speed profile calculation
   float speed_step = settings.max_rate[Z_AXIS] / SPEED_PROFILE_RESOLUTION;
   speed_profile[0] = THC_PULSE_PERIOD_MAX;
@@ -136,6 +140,27 @@ void thc_init()
 }
 
 float thc_get_voltage() { return ((float) thc_adc_value / thc_adc_multiplier); }
+
+static bool thc_feed_lock_active()
+{
+  plan_block_t *block = plan_get_current_block();
+  if (block == NULL) {
+    return false;
+  }
+  if (block->condition &
+      (PL_COND_FLAG_RAPID_MOTION | PL_COND_FLAG_SYSTEM_MOTION)) {
+    return true;
+  }
+
+  float nominal_rate = plan_compute_profile_nominal_speed(block);
+  float actual_rate  = st_get_realtime_rate();
+  if (nominal_rate <= 0.0f || actual_rate <= 0.0f) {
+    return true;
+  }
+
+  return (actual_rate * 100.0f) <
+         (nominal_rate * (float) THC_FEED_LOCKOUT_PERCENT);
+}
 
 // Sets the target THC voltage from e.g $T=112.5
 bool thc_set_voltage_target(float ftarget)
@@ -296,23 +321,43 @@ ISR(TIMER2_OVF_vect)
   if (thc_ctrl_counter >= THC_UPDATE_PERIOD_TICKS) {
     thc_ctrl_counter = thc_ctrl_counter - THC_UPDATE_PERIOD_TICKS;
     millis += THC_UPDATE_PERIOD_MS;
-    // Using "likely" here to avoid penalties while machine is running
     if (likely(machine_in_motion)) {
       if (CONTROL_PIN & (1 << ARC_OK_BIT)) {
         // The assumption is made that arc okay is a dry close from the plasma
         // and the input pin is then pulled to ground.
         // We don't have an arc_ok signal. Stay and update timestamp.
-        thc_action             = STAY;
-        arc_stablization_timer = millis;
+        thc_action              = STAY;
+        arc_stablization_timer  = millis;
+        thc_antidive_hold_ticks = 0;
+        thc_prev_adc_value      = thc_adc_value_safe;
       }
       else if (thc_adc_target > thc_on_threshold &&
                (millis - arc_stablization_timer) > ARC_STABILIZATION_TIME_MS) {
         // Update THC
         // We have an arc_ok signal, and THC is 'on'
         // Wait 3 seconds for arc voltage to stabalize
-        if ((millis - arc_stablization_timer) > ARC_STABILIZATION_TIME_MS) {
+        if (thc_feed_lock_active()) {
+          thc_action              = STAY;
+          thc_antidive_hold_ticks = 0;
+          thc_prev_adc_value      = thc_adc_value_safe;
+        }
+        else {
+          int16_t adc_delta =
+            (int16_t) thc_adc_value_safe - (int16_t) thc_prev_adc_value;
+          thc_prev_adc_value = thc_adc_value_safe;
+
+          if (adc_delta >
+                ((int16_t) thc_allowed_error * THC_ANTIDIVE_DV_MULTIPLIER) &&
+              thc_adc_value_safe > thc_adc_target + thc_allowed_error) {
+            thc_antidive_hold_ticks =
+              (uint8_t) (THC_ANTIDIVE_HOLD_MS / THC_UPDATE_PERIOD_MS);
+          }
+          else if (thc_antidive_hold_ticks) {
+            thc_antidive_hold_ticks--;
+          }
+
           if (thc_adc_value_safe > thc_adc_target + thc_allowed_error) {
-            thc_action = WITHDRAW;
+            thc_action = thc_antidive_hold_ticks ? STAY : WITHDRAW;
           }
           else if (thc_adc_value_safe < thc_adc_target - thc_allowed_error) {
             thc_action = APPROACH;
@@ -322,6 +367,16 @@ ISR(TIMER2_OVF_vect)
           }
         }
       }
+      else {
+        thc_action               = STAY;
+        thc_antidive_hold_ticks  = 0;
+        thc_prev_adc_value       = thc_adc_value_safe;
+      }
+    }
+    else {
+      thc_action               = STAY;
+      thc_antidive_hold_ticks  = 0;
+      thc_prev_adc_value       = thc_adc_value_safe;
     }
   }
   thc_busy = false;
