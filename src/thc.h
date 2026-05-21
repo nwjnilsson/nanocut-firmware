@@ -39,6 +39,11 @@
 // Positive ADC step threshold in multiples of thc_allowed_error.
 #define THC_ANTIDIVE_DV_MULTIPLIER 12
 
+// Speed profile indices for automatic proportional control.
+#define THC_AUTO_SLOW_IDX 6
+#define THC_AUTO_MED_IDX 12
+#define THC_AUTO_FAST_IDX 24
+
 // -----------------------------------------------------------------------------
 // Don't touch this part
 // -----------------------------------------------------------------------------
@@ -51,5 +56,7 @@ void  thc_init();
 void  thc_update();
 bool  thc_set_voltage_target(float input);
 float thc_get_voltage();
+void  thc_set_manual_action(enum THC_Action action);
+void  thc_clear_manual_action();
 
 #endif // thc_h

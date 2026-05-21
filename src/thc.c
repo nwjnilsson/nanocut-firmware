@@ -15,7 +15,6 @@
 
 // Globals
 volatile uint32_t millis         = 0;
-volatile int      thc_action     = STAY;
 volatile uint16_t thc_adc_value  = 0;
 static uint16_t   thc_adc_target = 0;
 
@@ -29,11 +28,13 @@ static uint16_t adc_ma_buf[MA_N];
 static uint8_t  adc_ma_head = 0;
 static uint16_t adc_ma_sum  = 0;
 
-static uint16_t thc_on_threshold   = 0; // in adc ticks
-static uint16_t thc_allowed_error  = 0; // in adc ticks
-static float    thc_adc_multiplier = 0.f;
-static uint8_t   thc_antidive_hold_ticks;
-static uint16_t  thc_prev_adc_value;
+static uint16_t thc_on_threshold         = 0; // in adc ticks
+static uint16_t thc_allowed_error        = 0; // in adc ticks
+static uint16_t thc_allowed_error_medium = 0;
+static uint16_t thc_allowed_error_fast   = 0;
+static float    thc_adc_multiplier       = 0.f;
+static uint8_t  thc_antidive_hold_ticks;
+static uint16_t thc_prev_adc_value;
 
 // Internal
 static uint32_t arc_stablization_timer = 0;
@@ -42,14 +43,59 @@ static int32_t  z_axis_steps_limit;
 // Array of pulse periods, slowest at index 0
 static uint16_t speed_profile[SPEED_PROFILE_RESOLUTION];
 // used to index the speed profile, sign indicates direction
-static int16_t       thc_speed = 0;
-static uint16_t      accel_threshold;
-static uint16_t      accel_counter     = 0;
-static uint16_t      thc_pulse_counter = 0;
-static uint16_t      thc_ctrl_counter  = 0;
-static volatile bool thc_busy          = false;
+static int16_t         thc_speed         = 0;
+static int16_t         thc_target_speed  = 0;
+static volatile int8_t thc_manual_action = STAY;
+static uint16_t        accel_threshold;
+static uint16_t        accel_counter     = 0;
+static uint16_t        thc_pulse_counter = 0;
+static uint16_t        thc_ctrl_counter  = 0;
+static volatile bool   thc_busy          = false;
 
 static void setup_timer_2(uint8_t val);
+static bool thc_manual_control_active()
+{
+  return !(sys.state & (STATE_CYCLE | STATE_HOLD | STATE_HOMING |
+                        STATE_SAFETY_DOOR | STATE_SLEEP));
+}
+
+static int16_t thc_target_speed_from_action(int8_t action, uint8_t speed_index)
+{
+  switch (action) {
+    case WITHDRAW:
+      return -(int16_t) speed_index;
+    case APPROACH:
+      return (int16_t) speed_index;
+    default:
+      return 0;
+  }
+}
+
+static int16_t thc_select_auto_target_speed(int16_t error, bool antidive_hold)
+{
+  uint16_t abs_error = abs(error);
+  uint8_t  speed_index;
+
+  if (abs_error <= thc_allowed_error) {
+    return 0;
+  }
+
+  speed_index = THC_AUTO_SLOW_IDX;
+  if (abs_error > thc_allowed_error_fast) {
+    speed_index = THC_AUTO_FAST_IDX;
+  }
+  else if (abs_error > thc_allowed_error_medium) {
+    speed_index = THC_AUTO_MED_IDX;
+  }
+
+  if (error > 0) {
+    return (int16_t) speed_index;
+  }
+  if (antidive_hold) {
+    return 0;
+  }
+  return -(int16_t) speed_index;
+}
 // static void debug_print(uint32_t num)
 // {
 //   while (num--) {
@@ -68,6 +114,8 @@ void thc_init()
     max(1u, (uint16_t) roundf(THC_ON_THRESHOLD_V * thc_adc_multiplier));
   thc_allowed_error =
     max(1u, (uint16_t) roundf(THC_ALLOWED_ERROR_V * thc_adc_multiplier));
+  thc_allowed_error_medium = thc_allowed_error << 1;
+  thc_allowed_error_fast   = thc_allowed_error << 2;
   // Initialize filter state
   adc_decimate_sum   = 0;
   adc_decimate_count = 0;
@@ -77,6 +125,8 @@ void thc_init()
     adc_ma_buf[i] = 0;
   thc_antidive_hold_ticks = 0;
   thc_prev_adc_value      = 0;
+  thc_target_speed        = 0;
+  thc_manual_action       = STAY;
   // Speed profile calculation
   float speed_step = settings.max_rate[Z_AXIS] / SPEED_PROFILE_RESOLUTION;
   speed_profile[0] = THC_PULSE_PERIOD_MAX;
@@ -141,9 +191,18 @@ void thc_init()
 
 float thc_get_voltage() { return ((float) thc_adc_value / thc_adc_multiplier); }
 
+void thc_set_manual_action(enum THC_Action action)
+{
+  if (thc_manual_control_active()) {
+    thc_manual_action = (int8_t) action;
+  }
+}
+
+void thc_clear_manual_action() { thc_manual_action = STAY; }
+
 static bool thc_feed_lock_active()
 {
-  plan_block_t *block = plan_get_current_block();
+  plan_block_t* block = plan_get_current_block();
   if (block == NULL) {
     return false;
   }
@@ -257,6 +316,13 @@ ISR(TIMER2_OVF_vect)
     // Avoid nesting interrupts
     return;
   }
+  thc_busy = true;
+  setup_timer_2(TIM2_LOAD_VAL);
+  thc_ctrl_counter++;
+  thc_pulse_counter++;
+  accel_counter++;
+  const uint16_t thc_adc_value_safe = thc_adc_value;
+  sei();
   // ===========================================================================
   // Interruptible part
   // ===========================================================================
@@ -265,30 +331,24 @@ ISR(TIMER2_OVF_vect)
   // ISR ticks is almost 3 full periods of grbls stepper interrupt, so we
   // should be good.
   // ===========================================================================
-  thc_busy = true;
-  setup_timer_2(TIM2_LOAD_VAL);
-  thc_ctrl_counter++;
-  thc_pulse_counter++;
-  accel_counter++;
-  const uint16_t thc_adc_value_safe = thc_adc_value;
-  sei();
-  int16_t action = STAY; // The action that will really be taken
-  int16_t accel  = thc_action;
-  switch (thc_action) {
-    case WITHDRAW: {
-      action = WITHDRAW + (((int16_t) (thc_speed > 0)) << 1);
-    } break;
-    case APPROACH: {
-      action = APPROACH - (((int16_t) (thc_speed < 0)) << 1);
-    } break;
-    case STAY: {
-      // Action stays STAY if thc_speed = 0
-      action -= (int16_t) (thc_speed < 0); // action = withdraw
-      action += (int16_t) (thc_speed > 0); // action = approach
-      accel = -action;
-    }
+  int16_t accel = 0;
+  if (thc_speed < thc_target_speed) {
+    accel = 1;
   }
-  thc_pulse_counter *= abs(action); // disable pulses if STAY
+  else if (thc_speed > thc_target_speed) {
+    accel = -1;
+  }
+
+  int8_t action = STAY; // The action that will really be taken
+  if (thc_speed < 0) {
+    action = WITHDRAW;
+  }
+  else if (thc_speed > 0) {
+    action = APPROACH;
+  }
+  else {
+    thc_pulse_counter = 0;
+  }
 
   //  Set current speed
   int16_t new_speed = thc_speed + accel;
@@ -321,13 +381,20 @@ ISR(TIMER2_OVF_vect)
   if (thc_ctrl_counter >= THC_UPDATE_PERIOD_TICKS) {
     thc_ctrl_counter = thc_ctrl_counter - THC_UPDATE_PERIOD_TICKS;
     millis += THC_UPDATE_PERIOD_MS;
-    if (likely(machine_in_motion)) {
+    if (thc_manual_control_active()) {
+      thc_target_speed =
+        thc_target_speed_from_action(thc_manual_action, THC_SPEED_LIMIT);
+      thc_antidive_hold_ticks = 0;
+      thc_prev_adc_value      = thc_adc_value_safe;
+    }
+    else if (likely(machine_in_motion)) {
+      thc_manual_action = STAY;
       if (CONTROL_PIN & (1 << ARC_OK_BIT)) {
         // The assumption is made that arc okay is a dry close from the plasma
         // and the input pin is then pulled to ground.
         // We don't have an arc_ok signal. Stay and update timestamp.
-        thc_action              = STAY;
         arc_stablization_timer  = millis;
+        thc_target_speed        = 0;
         thc_antidive_hold_ticks = 0;
         thc_prev_adc_value      = thc_adc_value_safe;
       }
@@ -337,7 +404,7 @@ ISR(TIMER2_OVF_vect)
         // We have an arc_ok signal, and THC is 'on'
         // Wait 3 seconds for arc voltage to stabalize
         if (thc_feed_lock_active()) {
-          thc_action              = STAY;
+          thc_target_speed        = 0;
           thc_antidive_hold_ticks = 0;
           thc_prev_adc_value      = thc_adc_value_safe;
         }
@@ -356,27 +423,22 @@ ISR(TIMER2_OVF_vect)
             thc_antidive_hold_ticks--;
           }
 
-          if (thc_adc_value_safe > thc_adc_target + thc_allowed_error) {
-            thc_action = thc_antidive_hold_ticks ? STAY : WITHDRAW;
-          }
-          else if (thc_adc_value_safe < thc_adc_target - thc_allowed_error) {
-            thc_action = APPROACH;
-          }
-          else {
-            thc_action = STAY;
-          }
+          thc_target_speed = thc_select_auto_target_speed(
+            (int16_t) thc_adc_target - (int16_t) thc_adc_value_safe,
+            thc_antidive_hold_ticks != 0);
         }
       }
       else {
-        thc_action               = STAY;
-        thc_antidive_hold_ticks  = 0;
-        thc_prev_adc_value       = thc_adc_value_safe;
+        thc_target_speed        = 0;
+        thc_antidive_hold_ticks = 0;
+        thc_prev_adc_value      = thc_adc_value_safe;
       }
     }
     else {
-      thc_action               = STAY;
-      thc_antidive_hold_ticks  = 0;
-      thc_prev_adc_value       = thc_adc_value_safe;
+      thc_manual_action       = STAY;
+      thc_target_speed        = 0;
+      thc_antidive_hold_ticks = 0;
+      thc_prev_adc_value      = thc_adc_value_safe;
     }
   }
   thc_busy = false;

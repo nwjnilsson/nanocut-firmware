@@ -63,7 +63,6 @@
 
 // ---------------------------------------------------------------------------------------
 // COMPILE-TIME ERROR CHECKING OF DEFINE VALUES:
-extern volatile int thc_action;
 extern volatile bool machine_in_motion;
 extern volatile uint32_t millis;
 

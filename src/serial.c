@@ -152,10 +152,10 @@ ISR(SERIAL_RX)
     case CMD_STATUS_REPORT: system_set_exec_state_flag(EXEC_STATUS_REPORT); break; // Set as true
     case CMD_CYCLE_START:   system_set_exec_state_flag(EXEC_CYCLE_START); break; // Set as true
     case CMD_FEED_HOLD:     system_set_exec_state_flag(EXEC_FEED_HOLD); break; // Set as true
-    case CMD_Z_RUN_NEGATIVE: thc_action = WITHDRAW; break;
-    case CMD_Z_RUN_POSITIVE: thc_action = APPROACH; break;
+    case CMD_Z_RUN_NEGATIVE: thc_set_manual_action(WITHDRAW); break;
+    case CMD_Z_RUN_POSITIVE: thc_set_manual_action(APPROACH); break;
     case CMD_Z_RUN_CANCEL: {
-      thc_action = STAY;
+      thc_clear_manual_action();
       break;
     };
     default :
