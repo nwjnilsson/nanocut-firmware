@@ -20,7 +20,7 @@
 // is connected to the feed hold, I suppose grbl won't start cutting until the
 // arc is fairly stable anyway. Maybe this is why the original author settled
 // for hardcoding this value here.
-#define ARC_STABILIZATION_TIME_MS 3000
+#define ARC_STABILIZATION_TIME_MS 1500
 
 // The threshold for when the THC is considered on and active. Volts.
 #define THC_ON_THRESHOLD_V 25.0
@@ -37,7 +37,7 @@
 #define THC_ANTIDIVE_HOLD_MS 100
 
 // Positive ADC step threshold in multiples of thc_allowed_error.
-#define THC_ANTIDIVE_DV_MULTIPLIER 2
+#define THC_ANTIDIVE_DV_MULTIPLIER 12
 
 // -----------------------------------------------------------------------------
 // Don't touch this part
