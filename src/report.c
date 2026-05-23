@@ -521,7 +521,11 @@ void report_realtime_status()
     printPgmString(PSTR("false"));
   }
   printPgmString(PSTR(", \"ARC_OK\": "));
-  if(CONTROL_PIN & (1<<ARC_OK_BIT))
+  // Note: ARC_OK in the DRO JSON keeps the legacy inverted sense -- true means
+  // "no arc". The host (see motion_controller.h) treats arc_ok == false as the
+  // active-arc condition. Use the debounced filtered state from thc.c so
+  // transient spikes don't produce spurious arc-on reports during jog.
+  if(!thc_arc_ok())
   {
     printPgmString(PSTR("true"));
   }

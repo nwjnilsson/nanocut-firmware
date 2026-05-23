@@ -4,7 +4,7 @@
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
 // Pulse period / acceleration related
-#define SPEED_PROFILE_RESOLUTION 50
+#define SPEED_PROFILE_RESOLUTION 40
 #define THC_UPDATE_PERIOD_TICKS 50
 #define THC_UPDATE_PERIOD_MS 5
 #define TIM2_LOAD_VAL 208
@@ -14,14 +14,14 @@
 #define ISR_TICKS_PER_MINUTE (1e4 * 60.f)
 
 // Globals
-volatile uint32_t millis         = 0;
+volatile uint16_t millis         = 0;
 volatile uint16_t thc_adc_value  = 0;
 static uint16_t   thc_adc_target = 0;
 
 // ADC filtering: decimate 16:1 (~600 Hz), then 7-sample centered moving
 // average. Group delay is constant at 3 decimated samples (5 ms). No tails.
 #define DECIMATE_N 16
-#define MA_N 7
+#define MA_N 4
 static uint16_t adc_decimate_sum   = 0;
 static uint8_t  adc_decimate_count = 0;
 static uint16_t adc_ma_buf[MA_N];
@@ -37,20 +37,29 @@ static uint8_t  thc_antidive_hold_ticks;
 static uint16_t thc_prev_adc_value;
 
 // Internal
-static uint32_t arc_stablization_timer = 0;
+static uint16_t arc_stablization_timer = 0;
 static uint16_t current_period         = 0;
 static int32_t  z_axis_steps_limit;
 // Array of pulse periods, slowest at index 0
 static uint16_t speed_profile[SPEED_PROFILE_RESOLUTION];
 // used to index the speed profile, sign indicates direction
-static int16_t         thc_speed         = 0;
-static int16_t         thc_target_speed  = 0;
+static int8_t          thc_speed         = 0;
+static int8_t          thc_target_speed  = 0;
 static volatile int8_t thc_manual_action = STAY;
 static uint16_t        accel_threshold;
 static uint16_t        accel_counter     = 0;
 static uint16_t        thc_pulse_counter = 0;
-static uint16_t        thc_ctrl_counter  = 0;
+static uint8_t         thc_ctrl_counter  = 0;
 static volatile bool   thc_busy          = false;
+
+// Arc okay debounce. The raw input is read every THC_UPDATE_PERIOD_MS. The
+// filtered state flips only after ARC_OK_DEBOUNCE_SAMPLES consecutive reads
+// agree on a new value. Stored as the "arc present" sense (i.e. opposite of
+// the raw pin level, since the pin is pulled high when no arc is present).
+static volatile bool arc_ok_filtered     = false;
+static uint8_t       arc_ok_debounce_cnt = 0;
+
+bool thc_arc_ok() { return arc_ok_filtered; }
 
 static void setup_timer_2(uint8_t val);
 static bool thc_manual_control_active()
@@ -127,6 +136,8 @@ void thc_init()
   thc_prev_adc_value      = 0;
   thc_target_speed        = 0;
   thc_manual_action       = STAY;
+  arc_ok_filtered         = false;
+  arc_ok_debounce_cnt     = 0;
   // Speed profile calculation
   float speed_step = settings.max_rate[Z_AXIS] / SPEED_PROFILE_RESOLUTION;
   speed_profile[0] = THC_PULSE_PERIOD_MAX;
@@ -331,7 +342,7 @@ ISR(TIMER2_OVF_vect)
   // ISR ticks is almost 3 full periods of grbls stepper interrupt, so we
   // should be good.
   // ===========================================================================
-  int16_t accel = 0;
+  int8_t accel = 0;
   if (thc_speed < thc_target_speed) {
     accel = 1;
   }
@@ -351,7 +362,7 @@ ISR(TIMER2_OVF_vect)
   }
 
   //  Set current speed
-  int16_t new_speed = thc_speed + accel;
+  int8_t new_speed = thc_speed + accel;
   if (accel_counter >= accel_threshold) {
     accel_counter -= accel_threshold;
     if (new_speed > -THC_SPEED_LIMIT && new_speed < THC_SPEED_LIMIT) {
@@ -381,6 +392,18 @@ ISR(TIMER2_OVF_vect)
   if (thc_ctrl_counter >= THC_UPDATE_PERIOD_TICKS) {
     thc_ctrl_counter = thc_ctrl_counter - THC_UPDATE_PERIOD_TICKS;
     millis += THC_UPDATE_PERIOD_MS;
+
+    // Debounce arc okay input. Pin is pulled high when no arc is present, so
+    // an active arc corresponds to the pin reading low.
+    bool arc_ok_raw = !(CONTROL_PIN & (1 << ARC_OK_BIT));
+    if (arc_ok_raw == arc_ok_filtered) {
+      arc_ok_debounce_cnt = 0;
+    }
+    else if (++arc_ok_debounce_cnt >= ARC_OK_DEBOUNCE_SAMPLES) {
+      arc_ok_filtered     = arc_ok_raw;
+      arc_ok_debounce_cnt = 0;
+    }
+
     if (thc_manual_control_active()) {
       thc_target_speed =
         thc_target_speed_from_action(thc_manual_action, THC_SPEED_LIMIT);
@@ -389,10 +412,10 @@ ISR(TIMER2_OVF_vect)
     }
     else if (likely(machine_in_motion)) {
       thc_manual_action = STAY;
-      if (CONTROL_PIN & (1 << ARC_OK_BIT)) {
-        // The assumption is made that arc okay is a dry close from the plasma
-        // and the input pin is then pulled to ground.
-        // We don't have an arc_ok signal. Stay and update timestamp.
+      if (!arc_ok_filtered) {
+        // We don't have a (debounced) arc okay signal. Stay and reset the
+        // arc stabilization timer so we restart the countdown the next time
+        // the arc comes back.
         arc_stablization_timer  = millis;
         thc_target_speed        = 0;
         thc_antidive_hold_ticks = 0;
@@ -435,6 +458,11 @@ ISR(TIMER2_OVF_vect)
       }
     }
     else {
+      // Not in motion. Hold the arc stabilization timer so that the
+      // ARC_STABILIZATION_TIME_MS countdown does not elapse during a stationary
+      // period (e.g. pierce delay). The timer should only count while we are
+      // both arc-OK and actually moving the torch along the cut.
+      arc_stablization_timer  = millis;
       thc_manual_action       = STAY;
       thc_target_speed        = 0;
       thc_antidive_hold_ticks = 0;
